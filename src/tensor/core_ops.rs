@@ -44,7 +44,6 @@ macro_rules! binary_core_op {
         where
             S: Same<Srhs> + ReprShape<T, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            <S as ReprShape<T, Srhs>>::Output: StaticShape,
             L: OpsDefaultOutput<T, <S as ReprShape<T, Srhs>>::Output>,
             Lrhs: for<'a> Layout<'a, T>,
             T: $bound<Output=T>,
@@ -266,7 +265,6 @@ macro_rules! binary_math_op {
         where
             S: Same<Srhs> + ReprShape<$type, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            <S as ReprShape<$type, Srhs>>::Output: StaticShape,
             L: OpsDefaultOutput<$type, <S as ReprShape<$type, Srhs>>::Output>,
             Lrhs: for<'a> Layout<'a, $type>,
         {
@@ -354,15 +352,14 @@ macro_rules! ternary_math_op {
             out
         }
 
-        pub fn $f_static<Srhs1, Lrhs1, Srhs2, Lrhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1>, other2: &Tensor<$type, Srhs2, Lrhs2>) -> Tensor<$type, <S as ReprShape<$type, <Srhs1 as ReprShape<$type, Srhs2>>::Output>>::Output, L::Default>
+        pub fn $f_static<Srhs1, Lrhs1, Srhs2, Lrhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1>, other2: &Tensor<$type, Srhs2, Lrhs2>) -> Tensor<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, L::Default>
         where
-            Srhs1: Same<Srhs2> + ReprShape<$type, Srhs2>,
-            S: Same<Srhs1> + Same<Srhs2> + ReprShape<$type, <Srhs1 as ReprShape<$type, Srhs2>>::Output>,
+            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
+            S: Same<Srhs1> + Same<Srhs2> + ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>,
             <S as Same<Srhs1>>::Output: TRUE,
             <S as Same<Srhs2>>::Output: TRUE,
             <Srhs1 as Same<Srhs2>>::Output: TRUE,
-            <S as ReprShape<$type, <Srhs1 as ReprShape<$type, Srhs2>>::Output>>::Output: StaticShape,
-            L: OpsDefaultOutput<$type, <S as ReprShape<$type, <Srhs1 as ReprShape<$type, Srhs2>>::Output>>::Output>,
+            L: OpsDefaultOutput<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output>,
             Lrhs1: for<'a> Layout<'a, $type>,
             Lrhs2: for<'a> Layout<'a, $type>,
         {

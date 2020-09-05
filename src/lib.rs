@@ -21,6 +21,9 @@ mod tests {
         assert_eq!(<Shape2D<Dyn, U2> as Same<Shape2D<U3, U3>>>::Output::BOOL, false);
         assert_eq!(<Shape4D<U5, U1, U3, U2> as NumElements<i32>>::Output::U8, 30_u8);
         assert_eq!(<Shape2D<Dyn, U2> as ReprShape<i32, Shape2D<U3, Dyn>>>::Output::to_vec(), vec![3, 2]);
+        assert!(<<Shape2D<Dyn, Dyn> as ReprShapeDyn<i32, Shape2D<U2, Dyn>>>::Output as Shape>::runtime_compat(&[2, 3]));
+        assert!(<<Shape2D<U2, Dyn> as ReprShapeDyn<i32, Shape2D<Dyn, Dyn>>>::Output as Shape>::runtime_compat(&[2, 3]));
+        assert!(<<Shape2D<Dyn, Dyn> as ReprShapeDyn<i32, Shape2D<Dyn, Dyn>>>::Output as Shape>::runtime_compat(&[3, 3]));
         assert!(<Shape2D<Dyn, Dyn> as Shape>::runtime_compat(&[3, 3]));
         assert!(<Shape2D<U3, Dyn> as Shape>::runtime_compat(&[3, 3]));
     }
@@ -82,9 +85,6 @@ mod tests {
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
         assert_eq!(c.as_view(), d);
-
-        // let t: SliceTensor<i32, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
-        // let u: StackTensor<_, _> = a.add_dyn(&t);
     }
 
     #[test]
@@ -100,10 +100,9 @@ mod tests {
         let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
         let b: SliceTensor<i32, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
         let c = a.add_dyn(&b);
-        let c: SliceTensor<_, Shape2D<U3, U3>> = c.as_static();
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c, d);
+        assert_eq!(c.as_static(), d);
     }
 
     #[test]
@@ -114,6 +113,143 @@ mod tests {
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
         assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn scal_add() {
+        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        let c = a.scal_add(1);
+
+        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn scal_add_dyn() {
+        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
+        let c = a.scal_add_dyn(1);
+
+        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
+        assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn exp() {
+        let data = [2.0_f64.ln(), 0.0, 0.0, 0.0, 2.0_f64.ln(), 0.0, 0.0, 0.0, 2.0_f64.ln()];
+        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&data);
+        let c = a.exp();
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn exp_dyn() {
+        let data = [2.0_f64.ln(), 0.0, 0.0, 0.0, 2.0_f64.ln(), 0.0, 0.0, 0.0, 2.0_f64.ln()];
+        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&data, vec![3, 3]);
+        let c = a.exp_dyn();
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
+        assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn powi() {
+        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
+        let c = a.powi(2);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn powi_dyn() {
+        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0], vec![3, 3]);
+        let c = a.powi_dyn(2);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]);
+        assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn max() {
+        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 0.0, 5.0, 9.0]);
+        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 0.0, 1.0]);
+        let c = a.max(&b);
+
+        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn max_static() {
+        let a: SliceTensor<f64, Shape2D<Dyn, U2>> = Tensor::from_slice_dyn(&[1.0, 0.0, 5.0, 9.0], vec![2, 2]);
+        let b: SliceTensor<f64, Shape2D<U2, Dyn>> = Tensor::from_slice_dyn(&[3.0, 1.0, 0.0, 1.0], vec![2, 2]);
+        let c = a.max_static(&b);
+
+        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn max_dyn() {
+        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1.0, 0.0, 5.0, 9.0], vec![2, 2]);
+        let b: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[3.0, 1.0, 0.0, 1.0], vec![2, 2]);
+        let c = a.max_dyn(&b);
+
+        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
+        assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn mul_add() {
+        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+        let x: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]);
+        let b: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let c = a.mul_add(&x, &b);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn mul_add_static() {
+        let a: SliceTensor<f64, Shape2D<Dyn, U3>> = Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
+        let x: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0], vec![3, 3]);
+        let b: SliceTensor<f64, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0], vec![3, 3]);
+        let c = a.mul_add_static(&x, &b);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn mul_add_dyn() {
+        let a: SliceTensor<f64, Shape2D<Dyn, U3>> = Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
+        let x: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0], vec![3, 3]);
+        let b: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0], vec![3, 3]);
+        let c = a.mul_add_dyn(&x, &b);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
+        assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn scal_mal_add() {
+        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+        let c = a.scal_mul_add(2.0, 1.0);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn scal_mul_add_dyn() {
+        let a: SliceTensor<f64, Shape2D<Dyn, U3>> = Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
+        let c = a.scal_mul_add_dyn(2.0, 1.0);
+
+        let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]);
+        assert_eq!(c.as_static(), d);
     }
 }
 

@@ -196,9 +196,9 @@ unsafe impl<T, S, A, SRhs, ARhs> ReprShapeDyn<T, TArr<SRhs, ARhs>> for TArr<S, A
 where
     Self: Same<TArr<SRhs, ARhs>>,
     S: ReprDim<SRhs>,
-    A: ReprShape<T, ARhs>,
+    A: ReprShapeDyn<T, ARhs>,
 {
-    type Output = TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShape<T, ARhs>>::Output>;
+    type Output = TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShapeDyn<T, ARhs>>::Output>;
 }
 
 pub unsafe trait ReprShape<T, Rhs>: Same<Rhs> {
