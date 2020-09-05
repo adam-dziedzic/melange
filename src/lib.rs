@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::prelude::*;
-    use typenum::{U1, U2, U3, U4, U5, U6};
+    use typenum::{U0, U1, U2, U3, U4, U5, U6};
     use typenum::marker_traits::{Bit, Unsigned};
 
     #[test]
@@ -19,13 +19,17 @@ mod tests {
         assert_eq!(<Shape1D<U6> as SameNumElements<i32, Shape2D<U3, U3>>>::Output::BOOL, false);
         assert_eq!(<Shape2D<Dyn, U2> as Same<Shape2D<U3, U2>>>::Output::BOOL, true);
         assert_eq!(<Shape2D<Dyn, U2> as Same<Shape2D<U3, U3>>>::Output::BOOL, false);
-        assert_eq!(<Shape4D<U5, U1, U3, U2> as NumElements<i32>>::Output::U8, 30_u8);
+        assert_eq!(<Shape4D<U5, U1, U3, U2> as NumElements<i32>>::Output::USIZE, 30);
         assert_eq!(<Shape2D<Dyn, U2> as ReprShape<i32, Shape2D<U3, Dyn>>>::Output::to_vec(), vec![3, 2]);
         assert!(<<Shape2D<Dyn, Dyn> as ReprShapeDyn<i32, Shape2D<U2, Dyn>>>::Output as Shape>::runtime_compat(&[2, 3]));
         assert!(<<Shape2D<U2, Dyn> as ReprShapeDyn<i32, Shape2D<Dyn, Dyn>>>::Output as Shape>::runtime_compat(&[2, 3]));
         assert!(<<Shape2D<Dyn, Dyn> as ReprShapeDyn<i32, Shape2D<Dyn, Dyn>>>::Output as Shape>::runtime_compat(&[3, 3]));
         assert!(<Shape2D<Dyn, Dyn> as Shape>::runtime_compat(&[3, 3]));
         assert!(<Shape2D<U3, Dyn> as Shape>::runtime_compat(&[3, 3]));
+        assert_eq!(<<Shape2D<U2, U3> as Reduction<U1>>::Output as StaticShape>::to_vec(), vec![2, 1]);
+        assert_eq!(<Shape2D<U2, U3> as ReductionOptChunckSize<i32, U0>>::Output::USIZE, 3);
+        assert_eq!(<Shape2D<U3, U3> as ReductionOptChunckSize<i32, U1>>::Output::USIZE, 1);
+        assert_eq!(<Shape4D<U5, U1, U3, U2> as At<U2>>::Output::USIZE, 3);
     }
 
     #[test]
@@ -250,6 +254,15 @@ mod tests {
 
         let d: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]);
         assert_eq!(c.as_static(), d);
+    }
+
+    #[test]
+    fn sum() {
+        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+        let c = a.sum::<U1>();
+
+        let d: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&[1.0, 1.0, 1.0]);
+        assert_eq!(c.as_view(), d);
     }
 }
 

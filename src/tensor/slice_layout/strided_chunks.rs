@@ -25,7 +25,7 @@ impl<'a, 'b, T> StridedChunks<'a, 'b, T> {
             });
 
         StridedChunks {
-            counter: vec![0; layout.num_elements],
+            counter: vec![0; layout.shape.len()],
             dead: false,
             step_sizes,
             chunk_size,
@@ -41,6 +41,7 @@ where
     type Item = &'a [T];
 
     fn next(&mut self) -> Option<Self::Item> {
+        println!("OLD FUCKING COUNTER = {:?}", self.counter);
         if self.dead {
             return None;
         }
@@ -60,6 +61,8 @@ where
                 return Some(chunk);
             }
         }
+
+        println!("NEW FUCKING COUNTER = {:?}", self.counter);
 
         self.dead = true;
         Some(chunk)

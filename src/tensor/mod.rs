@@ -6,3 +6,4 @@ pub mod heap_layout;
 pub mod slice_layout;
 pub mod core_ops;
 pub mod prelude;
+pub mod reduction;

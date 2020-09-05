@@ -1,4 +1,4 @@
-use typenum::{Bit, UInt, U1, B1, TArr, ATerm, Equal, Unsigned};
+use typenum::{Bit, UInt, U1, B0, B1, TArr, ATerm, Equal, Unsigned};
 use typenum::type_operators::*;
 use typenum::operator_aliases::*;
 use typenum::private::InternalMarker;
@@ -313,6 +313,79 @@ where
     <Self as NumElements<T>>::Output: IsEqual<<Rhs as NumElements<T>>::Output>
 {
     type Output = Eq<<Self as NumElements<T>>::Output, <Rhs as NumElements<T>>::Output>;
+}
+
+pub trait If<T, Else> {
+    type Output;
+}
+
+impl<T, Else> If<T, Else> for B1 {
+    type Output = T;
+}
+
+impl<T, Else> If<T, Else> for B0 {
+    type Output = Else;
+}
+
+pub trait Reduction<A> {
+    type Output;
+}
+
+impl<Ax> Reduction<Ax> for ATerm {
+    type Output = ATerm;
+}
+
+impl<Ax, D, Ar> Reduction<Ax> for TArr<D, Ar>
+where
+    Self: Len,
+    Length<Self>: Sub<B1>,
+    Ax: IsEqual<Sub1<Length<Self>>>,
+    Ar: Reduction<Ax>,
+    Eq<Ax, Sub1<Length<Self>>>: If<TArr<U1, Ar>, TArr<D, <Ar as Reduction<Ax>>::Output>>,
+{
+    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<TArr<U1, Ar>, TArr<D, <Ar as Reduction<Ax>>::Output>>>::Output;
+}
+
+pub trait ReductionOptChunckSize<T, Ax>: StaticShape {
+    type Output: Unsigned;
+}
+
+impl<Ax, T> ReductionOptChunckSize<T, Ax> for ATerm {
+    type Output = U1;
+}
+
+impl<Ax, D, Ar, T> ReductionOptChunckSize<T, Ax> for TArr<D, Ar>
+where
+    D: Mul<<Ar as ReductionOptChunckSize<T, Ax>>::Output>,
+    Self: Len + StaticShape,
+    Length<Self>: Sub<B1>,
+    Ax: IsEqual<Sub1<Length<Self>>>,
+    Ar: ReductionOptChunckSize<T, Ax> + NumElements<T>,
+    Eq<Ax, Sub1<Length<Self>>>: If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>,
+    <Eq<Ax, Sub1<Length<Self>>> as If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>>::Output: Unsigned,
+{
+    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>>::Output;
+}
+
+pub trait At<Ax>: StaticShape {
+    type Output: Unsigned;
+}
+
+impl<Ax> At<Ax> for ATerm {
+    type Output = U1;
+}
+
+impl<Ax, D, Ar> At<Ax> for TArr<D, Ar>
+where
+    D: StaticDim,
+    Self: Len,
+    Length<Self>: Sub<B1>,
+    Ax: IsEqual<Sub1<Length<Self>>>,
+    Ar: At<Ax>,
+    Eq<Ax, Sub1<Length<Self>>>: If<D, <Ar as At<Ax>>::Output>,
+    <Eq<Ax, Sub1<Length<Self>>> as If<D, <Ar as At<Ax>>::Output>>::Output: Unsigned,
+{
+    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<D, <Ar as At<Ax>>::Output>>::Output;
 }
 
 pub type Shape1D<S0> = TArr<S0, ATerm>;
