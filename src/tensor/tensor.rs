@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use super::shape::{Broadcast, Same, SameNumElements, Shape, StaticShape, TRUE};
-use super::layout::{Contiguous, Layout};
+use super::layout::{Contiguous, Layout, Alloc};
 use super::slice_layout::SliceLayout;
 
 #[derive(Debug, PartialEq)]
@@ -131,6 +131,16 @@ impl<T, S, L> Tensor<T, S, L>
     {
         Tensor {
             layout: self.layout.as_view_unchecked(S::to_vec(), S::strides(), S::NUM_ELEMENTS, S::NUM_ELEMENTS),
+            _phantoms: PhantomData,
+        }
+    }
+
+    pub fn alloc(shape: Vec<usize>) -> Self
+    where
+        L: Alloc
+    {
+        Tensor {
+            layout: L::alloc(shape),
             _phantoms: PhantomData,
         }
     }

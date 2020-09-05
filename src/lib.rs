@@ -20,9 +20,9 @@ mod tests {
         assert_eq!(<Shape2D<Dyn, U2> as Same<Shape2D<U3, U2>>>::Output::BOOL, true);
         assert_eq!(<Shape2D<Dyn, U2> as Same<Shape2D<U3, U3>>>::Output::BOOL, false);
         assert_eq!(<Shape4D<U5, U1, U3, U2> as NumElements<i32>>::Output::U8, 30_u8);
-        // assert_eq!(<Shape2D<Dyn, U2> as ReprShape<i32, Shape2D<U3, Dyn>>>::Output::runtime_compat(vec![2, 2]), false);
-        // assert_eq!(<Shape2D<Dyn, U2> as ReprShape<i32, Shape2D<U3, Dyn>>>::Output::runtime_compat(vec![3, 2]), true);
         assert_eq!(<Shape2D<Dyn, U2> as ReprShape<i32, Shape2D<U3, Dyn>>>::Output::to_vec(), vec![3, 2]);
+        assert!(<Shape2D<Dyn, Dyn> as Shape>::runtime_compat(&[3, 3]));
+        assert!(<Shape2D<U3, Dyn> as Shape>::runtime_compat(&[3, 3]));
     }
 
     #[test]
@@ -68,31 +68,42 @@ mod tests {
     fn add() {
         let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
         let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
-        let c: StackTensor<_, _> = a.add(&b);
+        let c = a.add(&b);
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
         assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn add_static_ok() {
+        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
+        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
+        let c = a.add_static(&b);
+
+        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
+        assert_eq!(c.as_view(), d);
+
+        // let t: SliceTensor<i32, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
+        // let u: StackTensor<_, _> = a.add_dyn(&t);
+    }
+
+    #[test]
+    #[should_panic(expected = "Tensors must have same shape")]
+    fn add_static_panic() {
+        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
+        let b: SliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 1, 1, 1]);
+        let _c = a.add_static(&b);
     }
 
     #[test]
     fn add_dyn_ok() {
         let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
-        let c: StackTensor<_, _> = a.add_dyn(&b);
+        let b: SliceTensor<i32, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
+        let c = a.add_dyn(&b);
+        let c: SliceTensor<_, Shape2D<U3, U3>> = c.as_static();
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_view(), d);
-
-        let t: SliceTensor<i32, Shape2D<U3, Dyn>> = Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
-        let u: StackTensor<_, _> = a.add_dyn(&t);
-    }
-
-    #[test]
-    #[should_panic(expected = "Tensors must have same shape")]
-    fn add_dyn_panic() {
-        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let b: SliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 1, 1, 1]);
-        let _c: StackTensor<_, _> = a.add_dyn(&b);
+        assert_eq!(c, d);
     }
 
     #[test]

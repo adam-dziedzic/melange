@@ -41,7 +41,7 @@ where
     B: Bit,
 {
     fn runtime_eq(dim: usize) -> bool {
-        U::to_usize() == dim
+        Self::to_usize() == dim
     }
 }
 
@@ -182,6 +182,23 @@ where
     Self: IsEqual<V>,
 {
     type Output = V;
+}
+
+pub unsafe trait ReprShapeDyn<T, Rhs>: Same<Rhs> {
+    type Output;
+}
+
+unsafe impl<T> ReprShapeDyn<T, ATerm> for ATerm {
+    type Output = ATerm;
+}
+
+unsafe impl<T, S, A, SRhs, ARhs> ReprShapeDyn<T, TArr<SRhs, ARhs>> for TArr<S, A>
+where
+    Self: Same<TArr<SRhs, ARhs>>,
+    S: ReprDim<SRhs>,
+    A: ReprShape<T, ARhs>,
+{
+    type Output = TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShape<T, ARhs>>::Output>;
 }
 
 pub unsafe trait ReprShape<T, Rhs>: Same<Rhs> {

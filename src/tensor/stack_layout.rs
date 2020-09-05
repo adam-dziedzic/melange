@@ -1,8 +1,9 @@
 use std::ops::{Deref, DerefMut};
 use generic_array::GenericArray;
 use super::shape::{NumElements, StaticShape};
-use super::layout::{Contiguous, Layout, LayoutMut};
+use super::layout::{Contiguous, Layout, LayoutMut, OpsDefaultOutput, OpsAllocOutput};
 use super::slice_layout::SliceLayout;
+use super::heap_layout::HeapLayout;
 
 #[derive(Debug, PartialEq)]
 pub struct StackLayout<T, S>
@@ -68,6 +69,22 @@ where
     fn chunks_mut(&'a mut self, chunk_size: usize) -> Self::IterMut {
         self.data.as_mut_slice().chunks_mut(chunk_size)
     }
+}
+
+impl<T, S> OpsDefaultOutput<T, S> for StackLayout<T, S>
+where
+    S: StaticShape + NumElements<T>,
+    T: Default + 'static,
+{
+    type Default = Self;
+}
+
+impl<T, S> OpsAllocOutput<T> for StackLayout<T, S>
+where
+    S: NumElements<T>,
+    T: Default + Clone + 'static,
+{
+    type Alloc = HeapLayout<T>;
 }
 
 impl<T, S> Contiguous for StackLayout<T, S>
