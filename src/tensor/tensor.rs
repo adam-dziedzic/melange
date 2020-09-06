@@ -5,12 +5,12 @@ use super::layout::{Contiguous, Layout, Alloc};
 use super::slice_layout::SliceLayout;
 
 #[derive(Debug, PartialEq)]
-pub struct Tensor<T, S, L> {
+pub struct Tensor<T, S, L, P> {
     layout: L,
-    _phantoms: PhantomData<(T, S)>,
+    _phantoms: PhantomData<(T, S, P)>,
 }
 
-impl<T, S, L> Default for Tensor<T, S, L>
+impl<T, S, L, P> Default for Tensor<T, S, L, P>
 where
     L: Default,
 {
@@ -22,7 +22,7 @@ where
     }
 }
 
-impl<'a, T, S> Tensor<T, S, SliceLayout<'a, T>> {
+impl<'a, T, S, P> Tensor<T, S, SliceLayout<'a, T>, P> {
     pub fn from_slice(slice: &'a [T]) -> Self
     where
         S: StaticShape,
@@ -62,9 +62,9 @@ impl<'a, T, S> Tensor<T, S, SliceLayout<'a, T>> {
     }
 }
 
-impl<T, S, L> Tensor<T, S, L>
+impl<T, S, L, P> Tensor<T, S, L, P>
 {
-    pub fn broadcast<'a, Z>(&'a self) -> Tensor<T, Z, L::View>
+    pub fn broadcast<'a, Z>(&'a self) -> Tensor<T, Z, L::View, P>
     where
         S: StaticShape + Broadcast<Z>,
         Z: StaticShape,
@@ -98,7 +98,7 @@ impl<T, S, L> Tensor<T, S, L>
         }
     }
 
-    pub fn reshape<'a, Z>(&'a self) -> Tensor<T, Z, L::View>
+    pub fn reshape<'a, Z>(&'a self) -> Tensor<T, Z, L::View, P>
     where
         Z: StaticShape,
         S: SameNumElements<T, Z>,
@@ -111,7 +111,7 @@ impl<T, S, L> Tensor<T, S, L>
         }
     }
 
-    pub fn as_static<'a, Z>(&'a self) -> Tensor<T, Z, L::View>
+    pub fn as_static<'a, Z>(&'a self) -> Tensor<T, Z, L::View, P>
     where
         Z: StaticShape,
         S: Same<Z>,
@@ -124,7 +124,7 @@ impl<T, S, L> Tensor<T, S, L>
         }
     }
 
-    pub fn as_view<'a>(&'a self) -> Tensor<T, S, L::View>
+    pub fn as_view<'a>(&'a self) -> Tensor<T, S, L::View, P>
     where
         S: StaticShape,
         L: Layout<'a, T>,
@@ -146,7 +146,7 @@ impl<T, S, L> Tensor<T, S, L>
     }
 }
 
-impl<T, S, L> Deref for Tensor<T, S, L> {
+impl<T, S, L, P> Deref for Tensor<T, S, L, P> {
     type Target = L;
 
     fn deref(&self) -> &Self::Target {
@@ -154,7 +154,7 @@ impl<T, S, L> Deref for Tensor<T, S, L> {
     }
 }
 
-impl<T, S, L> DerefMut for Tensor<T, S, L>
+impl<T, S, L, P> DerefMut for Tensor<T, S, L, P>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.layout

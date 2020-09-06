@@ -2,15 +2,16 @@ use std::ops::*;
 use rayon::prelude::*;
 use super::tensor::Tensor;
 use super::shape::{ReprShape, ReprShapeDyn, Same, StaticShape, TRUE};
-use super::layout::{Layout, LayoutMut, OpsDefaultOutput, OpsAllocOutput};
+use super::layout::{Layout, LayoutMut};
+use super::allocation_policy::{StaticAllocationPolicy, DynamicAllocationPolicy};
 
 macro_rules! binary_core_op {
     ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $bound:ident, $op:tt) => {
-        fn $f_unchecked<Srhs, Lrhs, Sout, Lout>(&self, other: &Tensor<T, Srhs, Lrhs>, out: &mut Tensor<T, Sout, Lout>)
+        fn $f_unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>, out: &mut Tensor<T, Sout, Lout, P>)
         where
+            T: $bound<Output=T>,
             Lrhs: for<'a> Layout<'a, T>,
             Lout: for<'a> LayoutMut<'a, T>,
-            T: $bound<Output=T>,
         {
             let chunk_size = self.opt_chunk_size().min(other.opt_chunk_size());
 
@@ -26,12 +27,12 @@ macro_rules! binary_core_op {
             }
         }
         
-        pub fn $f<Lrhs>(&self, other: &Tensor<T, S, Lrhs>) -> Tensor<T, S, L::Default>
+        pub fn $f<Lrhs, Prhs>(&self, other: &Tensor<T, S, Lrhs, Prhs>) -> Tensor<T, S, P::Layout, P>
         where
-            S: StaticShape,
-            L: OpsDefaultOutput<T, S>,
-            Lrhs: for<'a> Layout<'a, T>,
             T: $bound<Output=T>,
+            S: StaticShape,
+            P: StaticAllocationPolicy<T, S>,
+            Lrhs: for<'a> Layout<'a, T>,
         {
             let mut out = Tensor::default();
             
@@ -40,13 +41,13 @@ macro_rules! binary_core_op {
             out
         }
 
-        pub fn $f_static<Srhs, Lrhs>(&self, other: &Tensor<T, Srhs, Lrhs>) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, L::Default>
+        pub fn $f_static<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, P::Layout, P>
         where
+            T: $bound<Output=T>,
             S: Same<Srhs> + ReprShape<T, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            L: OpsDefaultOutput<T, <S as ReprShape<T, Srhs>>::Output>,
+            P: StaticAllocationPolicy<T, <S as ReprShape<T, Srhs>>::Output>,
             Lrhs: for<'a> Layout<'a, T>,
-            T: $bound<Output=T>,
         {
             let self_shape = self.shape();
             let other_shape = other.shape();
@@ -65,13 +66,13 @@ macro_rules! binary_core_op {
             out
         }
 
-        pub fn $f_dyn<Srhs, Lrhs>(&self, other: &Tensor<T, Srhs, Lrhs>) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, L::Alloc>
+        pub fn $f_dyn<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, P::Layout, P>
         where
+            T: $bound<Output=T>,
             S: Same<Srhs> + ReprShapeDyn<T, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            L: OpsAllocOutput<T>,
+            P: DynamicAllocationPolicy<T>,
             Lrhs: for<'a> Layout<'a, T>,
-            T: $bound<Output=T>,
         {
             let self_shape = self.shape();
             let other_shape = other.shape();
@@ -94,10 +95,10 @@ macro_rules! binary_core_op {
 
 macro_rules! scal_core_op {
     ($f_unchecked:ident, $f:ident, $f_dyn:ident, $bound:ident, $op:tt) => {
-        fn $f_unchecked<Lout>(&self, scal: T, out: &mut Tensor<T, S, Lout>)
+        fn $f_unchecked<Lout>(&self, scal: T, out: &mut Tensor<T, S, Lout, P>)
         where
-            Lout: for<'a> LayoutMut<'a, T>,
             T: $bound<Output=T>,
+            Lout: for<'a> LayoutMut<'a, T>,
         {
             let chunk_size = self.opt_chunk_size();
             
@@ -112,11 +113,11 @@ macro_rules! scal_core_op {
             }
         }
         
-        pub fn $f(&self, scal: T) -> Tensor<T, S, L::Default>
+        pub fn $f(&self, scal: T) -> Tensor<T, S, P::Layout, P>
         where
-            S: StaticShape,
-            L: OpsDefaultOutput<T, S>,
             T: $bound<Output=T>,
+            S: StaticShape,
+            P: StaticAllocationPolicy<T, S>,
         {
             let mut out = Tensor::default();
 
@@ -125,10 +126,10 @@ macro_rules! scal_core_op {
             out
         }
 
-        pub fn $f_dyn(&self, scal: T) -> Tensor<T, S, L::Alloc>
+        pub fn $f_dyn(&self, scal: T) -> Tensor<T, S, P::Layout, P>
         where
-            L: OpsAllocOutput<T>,
             T: $bound<Output=T>,
+            P: DynamicAllocationPolicy<T>,
         {
             let mut out = Tensor::alloc(self.shape());
 
@@ -141,7 +142,7 @@ macro_rules! scal_core_op {
 
 macro_rules! unary_math_op {
     ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, out: &mut Tensor<$type, S, Lout>)
+        fn $f_unchecked<Lout>(&self, out: &mut Tensor<$type, S, Lout, P>)
         where
             Lout: for<'a> LayoutMut<'a, $type>,
         {
@@ -158,10 +159,10 @@ macro_rules! unary_math_op {
                 }
         }
 
-        pub fn $f(&self) -> Tensor<$type, S, L::Default>
+        pub fn $f(&self) -> Tensor<$type, S, P::Layout, P>
         where
             S: StaticShape,
-            L: OpsDefaultOutput<$type, S>,
+            P: StaticAllocationPolicy<$type, S>,
         {
             let mut out = Tensor::default();
 
@@ -170,9 +171,9 @@ macro_rules! unary_math_op {
             out
         }
 
-        pub fn $f_dyn(&self) -> Tensor<$type, S, L::Alloc>
+        pub fn $f_dyn(&self) -> Tensor<$type, S, P::Layout, P>
         where
-            L: OpsAllocOutput<$type>,
+            P: DynamicAllocationPolicy<$type>,
         {
             let mut out = Tensor::alloc(self.shape());
 
@@ -185,7 +186,7 @@ macro_rules! unary_math_op {
 
 macro_rules! param_unary_math_op {
     ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $param_type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, param: $param_type, out: &mut Tensor<$type, S, Lout>)
+        fn $f_unchecked<Lout>(&self, param: $param_type, out: &mut Tensor<$type, S, Lout, P>)
         where
             Lout: for<'a> LayoutMut<'a, $type>,
         {
@@ -202,10 +203,10 @@ macro_rules! param_unary_math_op {
                 }
         }
 
-        pub fn $f(&self, param: $param_type) -> Tensor<$type, S, L::Default>
+        pub fn $f(&self, param: $param_type) -> Tensor<$type, S, P::Layout, P>
         where
             S: StaticShape,
-            L: OpsDefaultOutput<$type, S>,
+            P: StaticAllocationPolicy<$type, S>,
         {
             let mut out = Tensor::default();
 
@@ -214,9 +215,9 @@ macro_rules! param_unary_math_op {
             out
         }
 
-        pub fn $f_dyn(&self, param: $param_type) -> Tensor<$type, S, L::Alloc>
+        pub fn $f_dyn(&self, param: $param_type) -> Tensor<$type, S, P::Layout, P>
         where
-            L: OpsAllocOutput<$type>,
+            P: DynamicAllocationPolicy<$type>,
         {
             let mut out = Tensor::alloc(self.shape());
 
@@ -229,7 +230,7 @@ macro_rules! param_unary_math_op {
 
 macro_rules! binary_math_op {
     ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Srhs, Lrhs, Sout, Lout>(&self, other: &Tensor<$type, Srhs, Lrhs>, out: &mut Tensor<$type, Sout, Lout>)
+        fn $f_unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>, out: &mut Tensor<$type, Sout, Lout, P>)
         where
             Lrhs: for<'a> Layout<'a, $type>,
             Lout: for<'a> LayoutMut<'a, $type>,
@@ -248,10 +249,10 @@ macro_rules! binary_math_op {
             }
         }
         
-        pub fn $f<Lrhs>(&self, other: &Tensor<$type, S, Lrhs>) -> Tensor<$type, S, L::Default>
+        pub fn $f<Lrhs, Prhs>(&self, other: &Tensor<$type, S, Lrhs, Prhs>) -> Tensor<$type, S, P::Layout, P>
         where
             S: StaticShape,
-            L: OpsDefaultOutput<$type, S>,
+            P: StaticAllocationPolicy<$type, S>,
             Lrhs: for<'a> Layout<'a, $type>,
         {
             let mut out = Tensor::default();
@@ -261,11 +262,11 @@ macro_rules! binary_math_op {
             out
         }
 
-        pub fn $f_static<Srhs, Lrhs>(&self, other: &Tensor<$type, Srhs, Lrhs>) -> Tensor<$type, <S as ReprShape<$type, Srhs>>::Output, L::Default>
+        pub fn $f_static<Srhs, Lrhs, Prhs>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>) -> Tensor<$type, <S as ReprShape<$type, Srhs>>::Output, P::Layout, P>
         where
             S: Same<Srhs> + ReprShape<$type, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            L: OpsDefaultOutput<$type, <S as ReprShape<$type, Srhs>>::Output>,
+            P: StaticAllocationPolicy<$type, <S as ReprShape<$type, Srhs>>::Output>,
             Lrhs: for<'a> Layout<'a, $type>,
         {
             let self_shape = self.shape();
@@ -285,11 +286,11 @@ macro_rules! binary_math_op {
             out
         }
 
-        pub fn $f_dyn<Srhs, Lrhs>(&self, other: &Tensor<$type, Srhs, Lrhs>) -> Tensor<$type, <S as ReprShapeDyn<$type, Srhs>>::Output, L::Alloc>
+        pub fn $f_dyn<Srhs, Lrhs, Prhs>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>) -> Tensor<$type, <S as ReprShapeDyn<$type, Srhs>>::Output, P::Layout, P>
         where
             S: Same<Srhs> + ReprShapeDyn<$type, Srhs>,
             <S as Same<Srhs>>::Output: TRUE,
-            L: OpsAllocOutput<$type>,
+            P: DynamicAllocationPolicy<$type>,
             Lrhs: for<'a> Layout<'a, $type>,
         {
             let self_shape = self.shape();
@@ -313,7 +314,7 @@ macro_rules! binary_math_op {
 
 macro_rules! ternary_math_op {
     ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Srhs1, Lrhs1, Srhs2, Lrhs2, Sout, Lout>(&self, other1: &Tensor<$type, Srhs1, Lrhs1>, other2: &Tensor<$type, Srhs2, Lrhs2>, out: &mut Tensor<$type, Sout, Lout>)
+        fn $f_unchecked<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2, Sout, Lout>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>, out: &mut Tensor<$type, Sout, Lout, P>)
         where
             Lrhs1: for<'a> Layout<'a, $type>,
             Lrhs2: for<'a> Layout<'a, $type>,
@@ -338,10 +339,10 @@ macro_rules! ternary_math_op {
             }
         }
         
-        pub fn $f<Lrhs1, Lrhs2>(&self, other1: &Tensor<$type, S, Lrhs1>, other2: &Tensor<$type, S, Lrhs2>) -> Tensor<$type, S, L::Default>
+        pub fn $f<Lrhs1, Prhs1, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, S, Lrhs1, Prhs1>, other2: &Tensor<$type, S, Lrhs2, Prhs2>) -> Tensor<$type, S, P::Layout, P>
         where
             S: StaticShape,
-            L: OpsDefaultOutput<$type, S>,
+            P: StaticAllocationPolicy<$type, S>,
             Lrhs1: for<'a> Layout<'a, $type>,
             Lrhs2: for<'a> Layout<'a, $type>,
         {
@@ -352,14 +353,14 @@ macro_rules! ternary_math_op {
             out
         }
 
-        pub fn $f_static<Srhs1, Lrhs1, Srhs2, Lrhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1>, other2: &Tensor<$type, Srhs2, Lrhs2>) -> Tensor<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, L::Default>
+        pub fn $f_static<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>) -> Tensor<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, P::Layout, P>
         where
-            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
             S: Same<Srhs1> + Same<Srhs2> + ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>,
             <S as Same<Srhs1>>::Output: TRUE,
             <S as Same<Srhs2>>::Output: TRUE,
+            P: StaticAllocationPolicy<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output>,
+            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
             <Srhs1 as Same<Srhs2>>::Output: TRUE,
-            L: OpsDefaultOutput<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output>,
             Lrhs1: for<'a> Layout<'a, $type>,
             Lrhs2: for<'a> Layout<'a, $type>,
         {
@@ -388,14 +389,14 @@ macro_rules! ternary_math_op {
             out
         }
 
-        pub fn $f_dyn<Srhs1, Lrhs1, Srhs2, Lrhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1>, other2: &Tensor<$type, Srhs2, Lrhs2>) -> Tensor<$type, <S as ReprShapeDyn<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, L::Alloc>
+        pub fn $f_dyn<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>) -> Tensor<$type, <S as ReprShapeDyn<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, P::Layout, P>
         where
-            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
             S: Same<Srhs1> + Same<Srhs2> + ReprShapeDyn<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>,
             <S as Same<Srhs1>>::Output: TRUE,
             <S as Same<Srhs2>>::Output: TRUE,
+            P: DynamicAllocationPolicy<$type>,
+            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
             <Srhs1 as Same<Srhs2>>::Output: TRUE,
-            L: OpsAllocOutput<$type>,
             Lrhs1: for<'a> Layout<'a, $type>,
             Lrhs2: for<'a> Layout<'a, $type>,
         {
@@ -428,7 +429,7 @@ macro_rules! ternary_math_op {
 
 macro_rules! two_param_unary_math_op {
     ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $param1_type:ty, $param2_type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, param1: $param1_type, param2: $param2_type, out: &mut Tensor<$type, S, Lout>)
+        fn $f_unchecked<Lout>(&self, param1: $param1_type, param2: $param2_type, out: &mut Tensor<$type, S, Lout, P>)
         where
             Lout: for<'a> LayoutMut<'a, $type>,
         {
@@ -445,10 +446,10 @@ macro_rules! two_param_unary_math_op {
                 }
         }
 
-        pub fn $f(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, L::Default>
+        pub fn $f(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, P::Layout, P>
         where
             S: StaticShape,
-            L: OpsDefaultOutput<$type, S>,
+            P: StaticAllocationPolicy<$type, S>,
         {
             let mut out = Tensor::default();
 
@@ -457,9 +458,9 @@ macro_rules! two_param_unary_math_op {
             out
         }
 
-        pub fn $f_dyn(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, L::Alloc>
+        pub fn $f_dyn(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, P::Layout, P>
         where
-            L: OpsAllocOutput<$type>,
+            P: DynamicAllocationPolicy<$type>,
         {
             let mut out = Tensor::alloc(self.shape());
 
@@ -470,10 +471,10 @@ macro_rules! two_param_unary_math_op {
     };
 }
 
-impl<T, S, L> Tensor<T, S, L>
+impl<T, S, L, P> Tensor<T, S, L, P>
 where
-    L: for<'a> Layout<'a, T>,
     T: Send + Sync + Copy,
+    L: for<'a> Layout<'a, T>,
 {
     binary_core_op!(add_unchecked, add, add_static, add_dyn, Add, +);
     binary_core_op!(sub_unchecked, sub, sub_static, sub_dyn, Sub, -);
@@ -488,7 +489,7 @@ where
     scal_core_op!(scal_rem_unchecked, scal_rem, scal_rem_dyn, Rem, %);
 }
 
-impl<S, L> Tensor<f64, S, L>
+impl<S, L, P> Tensor<f64, S, L, P>
 where
     L: for<'a> Layout<'a, f64>,
 {
@@ -541,7 +542,7 @@ where
     two_param_unary_math_op!(scal_mul_add_unchecked, scal_mul_add, scal_mul_add_dyn, f64, f64, f64, mul_add);
 }
 
-impl<S, L> Tensor<f32, S, L>
+impl<S, L, P> Tensor<f32, S, L, P>
 where
     L: for<'a> Layout<'a, f32>,
 {
@@ -594,7 +595,7 @@ where
     two_param_unary_math_op!(scal_mul_add_unchecked, scal_mul_add, scal_mul_add_dyn, f32, f32, f32, mul_add);
 }
 
-impl<S, L> Tensor<u128, S, L>
+impl<S, L, P> Tensor<u128, S, L, P>
 where
     L: for<'a> Layout<'a, u128>,
 {
@@ -605,7 +606,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u128, rem_euclid);
 }
 
-impl<S, L> Tensor<u64, S, L>
+impl<S, L, P> Tensor<u64, S, L, P>
 where
     L: for<'a> Layout<'a, u64>,
 {
@@ -617,7 +618,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u64, rem_euclid);
 }
 
-impl<S, L> Tensor<u32, S, L>
+impl<S, L, P> Tensor<u32, S, L, P>
 where
     L: for<'a> Layout<'a, u32>,
 {
@@ -628,7 +629,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u32, rem_euclid);
 }
 
-impl<S, L> Tensor<u16, S, L>
+impl<S, L, P> Tensor<u16, S, L, P>
 where
     L: for<'a> Layout<'a, u16>,
 {
@@ -639,7 +640,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u16, rem_euclid);
 }
 
-impl<S, L> Tensor<u8, S, L>
+impl<S, L, P> Tensor<u8, S, L, P>
 where
     L: for<'a> Layout<'a, u8>,
 {
@@ -650,7 +651,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u8, rem_euclid);
 }
 
-impl<S, L> Tensor<i128, S, L>
+impl<S, L, P> Tensor<i128, S, L, P>
 where
     L: for<'a> Layout<'a, i128>,
 {
@@ -664,7 +665,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i128, rem_euclid);
 }
 
-impl<S, L> Tensor<i64, S, L>
+impl<S, L, P> Tensor<i64, S, L, P>
 where
     L: for<'a> Layout<'a, i64>,
 {
@@ -678,7 +679,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i64, rem_euclid);
 }
 
-impl<S, L> Tensor<i32, S, L>
+impl<S, L, P> Tensor<i32, S, L, P>
 where
     L: for<'a> Layout<'a, i32>,
 {
@@ -692,7 +693,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i32, rem_euclid);
 }
 
-impl<S, L> Tensor<i16, S, L>
+impl<S, L, P> Tensor<i16, S, L, P>
 where
     L: for<'a> Layout<'a, i16>,
 {
@@ -706,7 +707,7 @@ where
     binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i16, rem_euclid);
 }
 
-impl<S, L> Tensor<i8, S, L>
+impl<S, L, P> Tensor<i8, S, L, P>
 where
     L: for<'a> Layout<'a, i8>,
 {

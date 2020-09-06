@@ -21,16 +21,6 @@ where
     fn chunks_mut(&'a mut self, chunk_size: usize) -> Self::IterMut;
 }
 
-pub trait OpsDefaultOutput<T, S>
-{
-    type Default: for<'a> LayoutMut<'a, T> + Default;
-}
-
-pub trait OpsAllocOutput<T>
-{
-    type Alloc: for<'a> LayoutMut<'a, T> + Alloc;
-}
-
 pub trait Alloc {
     fn alloc(shape: Vec<usize>) -> Self;
 }

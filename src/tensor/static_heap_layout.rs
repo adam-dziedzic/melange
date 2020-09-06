@@ -1,56 +1,49 @@
 use std::ops::{Deref, DerefMut};
-use super::layout::{Layout, LayoutMut, Alloc, Contiguous};
+use std::marker::PhantomData;
+use super::layout::{Layout, LayoutMut, Contiguous};
 use super::slice_layout::SliceLayout;
+use super::shape::StaticShape;
 
 #[derive(Debug, PartialEq)]
-pub struct HeapLayout<T> {
+pub struct StaticHeapLayout<T, S> {
     data: Vec<T>,
-    shape: Vec<usize>,
-    strides: Vec<usize>,
+    _phantoms: PhantomData<S>,
 }
 
-impl<T> Alloc for HeapLayout<T>
+impl<T, S> Default for StaticHeapLayout<T, S>
 where
     T: Default + Clone,
+    S: StaticShape,
 {
-    fn alloc(shape: Vec<usize>) -> Self {
-        let mut num_elements = 1;
-        let mut strides = shape.clone();
-
-        for stride in strides.iter_mut().rev() {
-            let tmp = num_elements;
-            num_elements *= *stride;
-            *stride = tmp;
-        }
-        
-        HeapLayout {
-            data: vec![T::default(); num_elements],
-            shape,
-            strides,
+    fn default() -> Self {
+        StaticHeapLayout {
+            data: vec![T::default(); S::NUM_ELEMENTS],
+            _phantoms: PhantomData,
         }
     }
 }
 
-impl<'a, T> Layout<'a, T> for HeapLayout<T>
+impl<'a, T, S> Layout<'a, T> for StaticHeapLayout<T, S>
 where
     T: 'a,
+    S: StaticShape,
 {
     type Iter = std::slice::Chunks<'a, T>;
     type View = SliceLayout<'a, T>;
     
     #[inline]
     fn shape(&self) -> Vec<usize> {
-        self.shape.clone()
+        S::to_vec()
     }
 
     #[inline]
     fn strides(&self) -> Vec<usize> {
-        self.strides.clone()
+        S::strides()
     }
     
     #[inline]
     fn opt_chunk_size(&self) -> usize {
-        self.data.len()
+        S::NUM_ELEMENTS
     }
 
     #[inline]
@@ -64,7 +57,7 @@ where
     }
 }
 
-impl<'a, T> LayoutMut<'a, T> for HeapLayout<T>
+impl<'a, T, S> LayoutMut<'a, T> for StaticHeapLayout<T, S>
 where
     T: 'a,
 {
@@ -76,9 +69,9 @@ where
     }
 }
 
-impl<T> Contiguous for HeapLayout<T> {}
+impl<T, S> Contiguous for StaticHeapLayout<T, S> {}
 
-impl<T> Deref for HeapLayout<T> {
+impl<T, S> Deref for StaticHeapLayout<T, S> {
     type Target = [T];
     
     fn deref(&self) -> &Self::Target {
@@ -86,7 +79,7 @@ impl<T> Deref for HeapLayout<T> {
     }
 }
 
-impl<T> DerefMut for HeapLayout<T> {    
+impl<T, S> DerefMut for StaticHeapLayout<T, S> {    
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.as_mut_slice()
     }

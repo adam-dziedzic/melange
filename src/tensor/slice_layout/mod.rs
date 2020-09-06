@@ -1,9 +1,6 @@
 use std::ops::Deref;
 use rayon::prelude::*;
-use super::layout::{Layout, OpsDefaultOutput, OpsAllocOutput};
-use super::stack_layout::StackLayout;
-use super::heap_layout::HeapLayout;
-use super::shape::{StaticShape, NumElements};
+use super::layout::{Layout};
 
 mod strided_chunks;
 use strided_chunks::StridedChunks;
@@ -69,21 +66,6 @@ where
     fn as_view_unchecked(&'b self, shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self::View {        
         SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
     }
-}
-
-impl<'a, T, S> OpsDefaultOutput<T, S> for SliceLayout<'a, T>
-where
-    S: StaticShape + NumElements<T>,
-    T: Default + 'static,
-{
-    type Default = StackLayout<T, S>;
-}
-
-impl<'a, T> OpsAllocOutput<T> for SliceLayout<'a, T>
-where
-    T: Default + Clone + 'static,
-{
-    type Alloc = HeapLayout<T>;
 }
 
 impl<'a, T> Deref for SliceLayout<'a, T> {

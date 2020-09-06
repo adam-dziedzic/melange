@@ -3,19 +3,20 @@ use rayon::prelude::*;
 use typenum::Unsigned;
 use super::tensor::Tensor;
 use super::shape::{Reduction, ReductionOptChunckSize, At};
-use super::layout::{Layout, LayoutMut, OpsDefaultOutput, OpsAllocOutput};
+use super::layout::{Layout, LayoutMut};
+use super::allocation_policy::{StaticAllocationPolicy, DynamicAllocationPolicy};
 
-impl<T, S, L> Tensor<T, S, L>
+impl<T, S, L, P> Tensor<T, S, L, P>
 where
+    T: Send + Sync + Copy + std::fmt::Debug,
     S: std::fmt::Debug,
     L: for<'a> Layout<'a, T> + std::fmt::Debug,
-    T: Send + Sync + Copy + std::fmt::Debug,
 {
-    pub fn sum<Ax>(&self) -> Tensor<T, <S as Reduction<Ax>>::Output, L::Default>
+    pub fn sum<Ax>(&self) -> Tensor<T, <S as Reduction<Ax>>::Output, P::Layout, P>
     where
         T: AddAssign,
         S: Reduction<Ax> + ReductionOptChunckSize<T, Ax> + At<Ax>,
-        L: OpsDefaultOutput<T, <S as Reduction<Ax>>::Output>,
+        P: StaticAllocationPolicy<T, <S as Reduction<Ax>>::Output>,
     {
         let chunk_size_out = <S as ReductionOptChunckSize<T, Ax>>::Output::USIZE;
         let chunk_size_in = self.opt_chunk_size().min(chunk_size_out);
@@ -25,7 +26,7 @@ where
 
         let mut in_iter = self.chunks(chunk_size_in);
 
-        let mut out: Tensor<T, <S as Reduction<Ax>>::Output, L::Default> = Tensor::default();
+        let mut out: Tensor<T, <S as Reduction<Ax>>::Output, P::Layout, P> = Tensor::default();
     
         for chunk_o in out.chunks_mut(chunk_size_out) {
             for _ in 0..mid_loop_num {

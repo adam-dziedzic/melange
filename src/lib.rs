@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn reshape() {
-        let mut a: StackTensor<i32, Shape1D<U4>> = Tensor::default();
+        let mut a: StaticTensor<i32, Shape1D<U4>> = Tensor::default();
         for (x, y) in a.iter_mut().zip(&[1, 2, 1, 2]) {
             *x = *y;
         }
@@ -113,7 +113,7 @@ mod tests {
     fn add_broadcast() {
         let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
         let b: SliceTensor<i32, Shape1D<U3>> = Tensor::from_slice(&[1, 1, 1]);
-        let c: StackTensor<_, _> = a.add(&b.broadcast());
+        let c: StaticTensor<_, _> = a.add(&b.broadcast());
 
         let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
         assert_eq!(c.as_view(), d);
