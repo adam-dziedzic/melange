@@ -1,106 +1,184 @@
 use std::ops::*;
 use rayon::prelude::*;
+use road_ai_macros::expand_operations;
 use super::tensor::Tensor;
 use super::shape::{ReprShape, ReprShapeDyn, Same, StaticShape, TRUE};
 use super::layout::{Layout, LayoutMut};
 use super::allocation_policy::{StaticAllocationPolicy, DynamicAllocationPolicy};
 
-macro_rules! binary_core_op {
-    ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $bound:ident, $op:tt) => {
-        fn $f_unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>, out: &mut Tensor<T, Sout, Lout, P>)
-        where
-            T: $bound<Output=T>,
-            Lrhs: for<'a> Layout<'a, T>,
-            Lout: for<'a> LayoutMut<'a, T>,
-        {
-            let chunk_size = self.opt_chunk_size().min(other.opt_chunk_size());
+#[expand_operations(
+    add<T: Send + Sync + Copy + Add<Output=T>>,
+    sub<T: Send + Sync + Copy + Sub<Output=T>>,
+    mul<T: Send + Sync + Copy + Mul<Output=T>>,
+    div<T: Send + Sync + Copy + Div<Output=T>>,
+    rem<T: Send + Sync + Copy + Rem<Output=T>>,
+    atan2<T=f64>,
+    copysign<T=f64>,
+    div_euclid<T=f64>,
+    max<T=f64>,
+    min<T=f64>,
+    rem_euclid<T=f64>,
+    atan2<T=f32>,
+    copysign<T=f32>,
+    div_euclid<T=f32>,
+    max<T=f32>,
+    min<T=f32>,
+    rem_euclid<T=f32>,
+    div_euclid<T=u128>,
+    rem_euclid<T=u128>,
+    div_euclid<T=u64>,
+    rem_euclid<T=u64>,
+    div_euclid<T=u32>,
+    rem_euclid<T=u32>,
+    div_euclid<T=u16>,
+    rem_euclid<T=u16>,
+    div_euclid<T=u8>,
+    rem_euclid<T=u8>,
+    div_euclid<T=i128>,
+    rem_euclid<T=i128>,
+    div_euclid<T=i64>,
+    rem_euclid<T=i64>,
+    div_euclid<T=i32>,
+    rem_euclid<T=i32>,
+    div_euclid<T=i16>,
+    rem_euclid<T=i16>,
+    div_euclid<T=i8>,
+    rem_euclid<T=i8>,
+)]
+impl<T, S, L, P> Tensor<T, S, L, P>
+where
+    L: for <'a> Layout<'a, T>,
+{
+    #[inline]
+    fn unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>, out: &mut Tensor<T, Sout, Lout, P>)
+    where
+        Lrhs: for<'a> Layout<'a, T>,
+        Lout: for<'a> LayoutMut<'a, T>,
+    {
+        let chunk_size = self.opt_chunk_size().min(other.opt_chunk_size());
 
-            for ((chunk_self, chunk_other), chunk_out) in self
-                .chunks(chunk_size)
-                .zip(other.chunks(chunk_size))
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self.par_iter()
-                    .zip(chunk_other.par_iter())
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|((x, y), z)| *z = *x $op *y);
-            }
+        for ((chunk_self, chunk_other), chunk_out) in self
+            .chunks(chunk_size)
+            .zip(other.chunks(chunk_size))
+            .zip(out.chunks_mut(chunk_size))
+        {
+            chunk_self.par_iter()
+                .zip(chunk_other.par_iter())
+                .zip(chunk_out.par_iter_mut())
+                .for_each(|((x, y), z)| *z = x.placeholder(*y));
         }
+    }
+    
+    pub fn operation<Lrhs, Prhs>(&self, other: &Tensor<T, S, Lrhs, Prhs>) -> Tensor<T, S, P::Layout, P>
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+        Lrhs: for<'a> Layout<'a, T>,
+    {
+        let mut out = Tensor::default();
         
-        pub fn $f<Lrhs, Prhs>(&self, other: &Tensor<T, S, Lrhs, Prhs>) -> Tensor<T, S, P::Layout, P>
-        where
-            T: $bound<Output=T>,
-            S: StaticShape,
-            P: StaticAllocationPolicy<T, S>,
-            Lrhs: for<'a> Layout<'a, T>,
-        {
-            let mut out = Tensor::default();
-            
-            self.$f_unchecked(other, &mut out);
+        self.unchecked(other, &mut out);
 
-            out
-        }
+        out
+    }
 
-        pub fn $f_static<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, P::Layout, P>
-        where
-            T: $bound<Output=T>,
-            S: Same<Srhs> + ReprShape<T, Srhs>,
-            <S as Same<Srhs>>::Output: TRUE,
-            P: StaticAllocationPolicy<T, <S as ReprShape<T, Srhs>>::Output>,
-            Lrhs: for<'a> Layout<'a, T>,
-        {
-            let self_shape = self.shape();
-            let other_shape = other.shape();
-            assert_eq!(
-                self_shape,
-                other_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other_shape
-            );
+    pub fn coerce<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, P::Layout, P>
+    where
+        S: Same<Srhs> + ReprShape<T, Srhs>,
+        <S as Same<Srhs>>::Output: TRUE,
+        P: StaticAllocationPolicy<T, <S as ReprShape<T, Srhs>>::Output>,
+        Lrhs: for<'a> Layout<'a, T>,
+    {
+        let self_shape = self.shape();
+        let other_shape = other.shape();
+        assert_eq!(
+            self_shape,
+            other_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other_shape
+        );
 
-            let mut out = Tensor::default();
+        let mut out = Tensor::default();
 
-            self.$f_unchecked(other, &mut out);
+        self.unchecked(other, &mut out);
 
-            out
-        }
+        out
+    }
 
-        pub fn $f_dyn<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, P::Layout, P>
-        where
-            T: $bound<Output=T>,
-            S: Same<Srhs> + ReprShapeDyn<T, Srhs>,
-            <S as Same<Srhs>>::Output: TRUE,
-            P: DynamicAllocationPolicy<T>,
-            Lrhs: for<'a> Layout<'a, T>,
-        {
-            let self_shape = self.shape();
-            let other_shape = other.shape();
-            assert_eq!(
-                self_shape,
-                other_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other_shape
-            );
+    pub fn dynamic<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, P::Layout, P>
+    where
+        S: Same<Srhs> + ReprShapeDyn<T, Srhs>,
+        <S as Same<Srhs>>::Output: TRUE,
+        P: DynamicAllocationPolicy<T>,
+        Lrhs: for<'a> Layout<'a, T>,
+    {
+        let self_shape = self.shape();
+        let other_shape = other.shape();
+        assert_eq!(
+            self_shape,
+            other_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other_shape
+        );
 
-            let mut out = Tensor::alloc(self_shape);
+        let mut out = Tensor::alloc(self_shape);
 
-            self.$f_unchecked(other, &mut out);
+        self.unchecked(other, &mut out);
 
-            out
-        }
-    };
+        out
+    }
 }
 
-macro_rules! scal_core_op {
-    ($f_unchecked:ident, $f:ident, $f_dyn:ident, $bound:ident, $op:tt) => {
-        fn $f_unchecked<Lout>(&self, scal: T, out: &mut Tensor<T, S, Lout, P>)
-        where
-            T: $bound<Output=T>,
-            Lout: for<'a> LayoutMut<'a, T>,
-        {
-            let chunk_size = self.opt_chunk_size();
+#[expand_operations(
+    add<T: Send + Sync + Copy + Add<Output=T>>(T) as scal_add,
+    sub<T: Send + Sync + Copy + Sub<Output=T>>(T) as scal_sub,
+    mul<T: Send + Sync + Copy + Mul<Output=T>>(T) as scal_mul,
+    div<T: Send + Sync + Copy + Div<Output=T>>(T) as scal_div,
+    rem<T: Send + Sync + Copy + Rem<Output=T>>(T) as scal_rem,
+    div_euclid<T=f64>(f64) as scal_div_euclid,
+    max<T=f64>(f64) as scal_max,
+    min<T=f64>(f64) as scal_min,
+    powf<T=f64>(f64),
+    rem_euclid<T=f64>(f64) as scal_rem_euclid,
+    powi<T=f64>(i32),
+    max<T=f32>(f32) as scal_max,
+    min<T=f32>(f32) as scal_min,
+    powf<T=f32>(f32),
+    rem_euclid<T=f32>(f32) as scal_rem_euclid,
+    powi<T=f32>(i32),
+    div_euclid<T=u128>(u128) as scal_div_euclid,
+    rem_euclid<T=u128>(u128) as scal_rem_euclid,
+    div_euclid<T=u64>(u64) as scal_div_euclid,
+    rem_euclid<T=u64>(u64) as scal_rem_euclid,
+    div_euclid<T=u32>(u32) as scal_div_euclid,
+    rem_euclid<T=u32>(u32) as scal_rem_euclid,
+    div_euclid<T=u16>(u16) as scal_div_euclid,
+    rem_euclid<T=u16>(u16) as scal_rem_euclid,
+    div_euclid<T=u8>(u8) as scal_div_euclid,
+    rem_euclid<T=u8>(u8) as scal_rem_euclid,
+    div_euclid<T=i128>(i128) as scal_div_euclid,
+    rem_euclid<T=i128>(i128) as scal_rem_euclid,
+    div_euclid<T=i64>(i64) as scal_div_euclid,
+    rem_euclid<T=i64>(i64) as scal_rem_euclid,
+    div_euclid<T=i32>(i32) as scal_div_euclid,
+    rem_euclid<T=i32>(i32) as scal_rem_euclid,
+    div_euclid<T=i16>(i16) as scal_div_euclid,
+    rem_euclid<T=i16>(i16) as scal_rem_euclid,
+    div_euclid<T=i8>(i8) as scal_div_euclid,
+    rem_euclid<T=i8>(i8) as scal_rem_euclid,
+)]
+impl<T, S, L, P> Tensor<T, S, L, P>
+where
+    L: for <'a> Layout<'a, T>,
+{
+    #[inline]
+    fn unchecked<Lout>(&self, param: type0, out: &mut Tensor<T, S, Lout, P>)
+    where
+        Lout: for<'a> LayoutMut<'a, T>,
+    {
+        let chunk_size = self.opt_chunk_size();
             
             for (chunk_self, chunk_out) in self
                 .chunks(chunk_size)
@@ -109,614 +187,317 @@ macro_rules! scal_core_op {
                 chunk_self
                     .par_iter()
                     .zip(chunk_out.par_iter_mut())
-                    .for_each(|(x, y)| *y = *x $op scal);
+                    .for_each(|(x, y)| *y = x.placeholder(param));
             }
-        }
-        
-        pub fn $f(&self, scal: T) -> Tensor<T, S, P::Layout, P>
-        where
-            T: $bound<Output=T>,
-            S: StaticShape,
-            P: StaticAllocationPolicy<T, S>,
-        {
-            let mut out = Tensor::default();
+    }
 
-            self.$f_unchecked(scal, &mut out);
+    pub fn operation(&self, param: type0) -> Tensor<T, S, P::Layout, P>
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+    {
+        let mut out = Tensor::default();
 
-            out
-        }
+        self.unchecked(param, &mut out);
 
-        pub fn $f_dyn(&self, scal: T) -> Tensor<T, S, P::Layout, P>
-        where
-            T: $bound<Output=T>,
-            P: DynamicAllocationPolicy<T>,
-        {
-            let mut out = Tensor::alloc(self.shape());
+        out
+    }
 
-            self.$f_unchecked(scal, &mut out);
+    pub fn dynamic(&self, param: type0) -> Tensor<T, S, P::Layout, P>
+    where
+        P: DynamicAllocationPolicy<T>,
+    {
+        let mut out = Tensor::alloc(self.shape());
 
-            out
-        }
-    };
+        self.unchecked(param, &mut out);
+
+        out
+    }
 }
 
-macro_rules! unary_math_op {
-    ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, out: &mut Tensor<$type, S, Lout, P>)
-        where
-            Lout: for<'a> LayoutMut<'a, $type>,
-        {
-            let chunk_size = self.opt_chunk_size();
-                
-                for (chunk_self, chunk_out) in self
-                    .chunks(chunk_size)
-                    .zip(out.chunks_mut(chunk_size))
-                {
-                    chunk_self
-                        .par_iter()
-                        .zip(chunk_out.par_iter_mut())
-                        .for_each(|(x, y)| *y = x.$op());
-                }
-        }
-
-        pub fn $f(&self) -> Tensor<$type, S, P::Layout, P>
-        where
-            S: StaticShape,
-            P: StaticAllocationPolicy<$type, S>,
-        {
-            let mut out = Tensor::default();
-
-            self.$f_unchecked(&mut out);
-
-            out
-        }
-
-        pub fn $f_dyn(&self) -> Tensor<$type, S, P::Layout, P>
-        where
-            P: DynamicAllocationPolicy<$type>,
-        {
-            let mut out = Tensor::alloc(self.shape());
-
-            self.$f_unchecked(&mut out);
-
-            out
-        }
-    };
-}
-
-macro_rules! param_unary_math_op {
-    ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $param_type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, param: $param_type, out: &mut Tensor<$type, S, Lout, P>)
-        where
-            Lout: for<'a> LayoutMut<'a, $type>,
-        {
-            let chunk_size = self.opt_chunk_size();
-                
-                for (chunk_self, chunk_out) in self
-                    .chunks(chunk_size)
-                    .zip(out.chunks_mut(chunk_size))
-                {
-                    chunk_self
-                        .par_iter()
-                        .zip(chunk_out.par_iter_mut())
-                        .for_each(|(x, y)| *y = x.$op(param));
-                }
-        }
-
-        pub fn $f(&self, param: $param_type) -> Tensor<$type, S, P::Layout, P>
-        where
-            S: StaticShape,
-            P: StaticAllocationPolicy<$type, S>,
-        {
-            let mut out = Tensor::default();
-
-            self.$f_unchecked(param, &mut out);
-
-            out
-        }
-
-        pub fn $f_dyn(&self, param: $param_type) -> Tensor<$type, S, P::Layout, P>
-        where
-            P: DynamicAllocationPolicy<$type>,
-        {
-            let mut out = Tensor::alloc(self.shape());
-
-            self.$f_unchecked(param, &mut out);
-
-            out
-        }
-    };
-}
-
-macro_rules! binary_math_op {
-    ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>, out: &mut Tensor<$type, Sout, Lout, P>)
-        where
-            Lrhs: for<'a> Layout<'a, $type>,
-            Lout: for<'a> LayoutMut<'a, $type>,
-        {
-            let chunk_size = self.opt_chunk_size().min(other.opt_chunk_size());
-
-            for ((chunk_self, chunk_other), chunk_out) in self
-                .chunks(chunk_size)
-                .zip(other.chunks(chunk_size))
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self.par_iter()
-                    .zip(chunk_other.par_iter())
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|((x, y), z)| *z = x.$op(*y));
-            }
-        }
-        
-        pub fn $f<Lrhs, Prhs>(&self, other: &Tensor<$type, S, Lrhs, Prhs>) -> Tensor<$type, S, P::Layout, P>
-        where
-            S: StaticShape,
-            P: StaticAllocationPolicy<$type, S>,
-            Lrhs: for<'a> Layout<'a, $type>,
-        {
-            let mut out = Tensor::default();
-            
-            self.$f_unchecked(other, &mut out);
-
-            out
-        }
-
-        pub fn $f_static<Srhs, Lrhs, Prhs>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>) -> Tensor<$type, <S as ReprShape<$type, Srhs>>::Output, P::Layout, P>
-        where
-            S: Same<Srhs> + ReprShape<$type, Srhs>,
-            <S as Same<Srhs>>::Output: TRUE,
-            P: StaticAllocationPolicy<$type, <S as ReprShape<$type, Srhs>>::Output>,
-            Lrhs: for<'a> Layout<'a, $type>,
-        {
-            let self_shape = self.shape();
-            let other_shape = other.shape();
-            assert_eq!(
-                self_shape,
-                other_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other_shape
-            );
-
-            let mut out = Tensor::default();
-
-            self.$f_unchecked(other, &mut out);
-
-            out
-        }
-
-        pub fn $f_dyn<Srhs, Lrhs, Prhs>(&self, other: &Tensor<$type, Srhs, Lrhs, Prhs>) -> Tensor<$type, <S as ReprShapeDyn<$type, Srhs>>::Output, P::Layout, P>
-        where
-            S: Same<Srhs> + ReprShapeDyn<$type, Srhs>,
-            <S as Same<Srhs>>::Output: TRUE,
-            P: DynamicAllocationPolicy<$type>,
-            Lrhs: for<'a> Layout<'a, $type>,
-        {
-            let self_shape = self.shape();
-            let other_shape = other.shape();
-            assert_eq!(
-                self_shape,
-                other_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other_shape
-            );
-
-            let mut out = Tensor::alloc(self_shape);
-
-            self.$f_unchecked(other, &mut out);
-
-            out
-        }
-    };
-}
-
-macro_rules! ternary_math_op {
-    ($f_unchecked:ident, $f:ident, $f_static:ident, $f_dyn:ident, $type:ty, $op:ident) => {
-        fn $f_unchecked<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2, Sout, Lout>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>, out: &mut Tensor<$type, Sout, Lout, P>)
-        where
-            Lrhs1: for<'a> Layout<'a, $type>,
-            Lrhs2: for<'a> Layout<'a, $type>,
-            Lout: for<'a> LayoutMut<'a, $type>,
-        {
-            let chunk_size = self
-                .opt_chunk_size()
-                .min(other1.opt_chunk_size())
-                .min(other2.opt_chunk_size());
-
-            for (((chunk_self, chunk_other1), chunk_other2), chunk_out) in self
-                .chunks(chunk_size)
-                .zip(other1.chunks(chunk_size))
-                .zip(other2.chunks(chunk_size))
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self.par_iter()
-                    .zip(chunk_other1.par_iter())
-                    .zip(chunk_other2.par_iter())
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|(((x, y1), y2), z)| *z = x.$op(*y1, *y2));
-            }
-        }
-        
-        pub fn $f<Lrhs1, Prhs1, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, S, Lrhs1, Prhs1>, other2: &Tensor<$type, S, Lrhs2, Prhs2>) -> Tensor<$type, S, P::Layout, P>
-        where
-            S: StaticShape,
-            P: StaticAllocationPolicy<$type, S>,
-            Lrhs1: for<'a> Layout<'a, $type>,
-            Lrhs2: for<'a> Layout<'a, $type>,
-        {
-            let mut out = Tensor::default();
-            
-            self.$f_unchecked(other1, other2, &mut out);
-
-            out
-        }
-
-        pub fn $f_static<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>) -> Tensor<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, P::Layout, P>
-        where
-            S: Same<Srhs1> + Same<Srhs2> + ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>,
-            <S as Same<Srhs1>>::Output: TRUE,
-            <S as Same<Srhs2>>::Output: TRUE,
-            P: StaticAllocationPolicy<$type, <S as ReprShape<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output>,
-            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
-            <Srhs1 as Same<Srhs2>>::Output: TRUE,
-            Lrhs1: for<'a> Layout<'a, $type>,
-            Lrhs2: for<'a> Layout<'a, $type>,
-        {
-            let self_shape = self.shape();
-            let other1_shape = other1.shape();
-            let other2_shape = other2.shape();
-            assert_eq!(
-                self_shape,
-                other1_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other1_shape
-            );
-            assert_eq!(
-                self_shape,
-                other2_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other2_shape
-            );
-
-            let mut out = Tensor::default();
-
-            self.$f_unchecked(other1, other2, &mut out);
-
-            out
-        }
-
-        pub fn $f_dyn<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<$type, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<$type, Srhs2, Lrhs2, Prhs2>) -> Tensor<$type, <S as ReprShapeDyn<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>>::Output, P::Layout, P>
-        where
-            S: Same<Srhs1> + Same<Srhs2> + ReprShapeDyn<$type, <Srhs1 as ReprShapeDyn<$type, Srhs2>>::Output>,
-            <S as Same<Srhs1>>::Output: TRUE,
-            <S as Same<Srhs2>>::Output: TRUE,
-            P: DynamicAllocationPolicy<$type>,
-            Srhs1: Same<Srhs2> + ReprShapeDyn<$type, Srhs2>,
-            <Srhs1 as Same<Srhs2>>::Output: TRUE,
-            Lrhs1: for<'a> Layout<'a, $type>,
-            Lrhs2: for<'a> Layout<'a, $type>,
-        {
-            let self_shape = self.shape();
-            let other1_shape = other1.shape();
-            let other2_shape = other2.shape();
-            assert_eq!(
-                self_shape,
-                other1_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other1_shape
-            );
-            assert_eq!(
-                self_shape,
-                other2_shape,
-                "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
-                self_shape,
-                other2_shape
-            );
-
-            let mut out = Tensor::alloc(self_shape);
-
-            self.$f_unchecked(other1, other2, &mut out);
-
-            out
-        }
-    };
-}
-
-macro_rules! two_param_unary_math_op {
-    ($f_unchecked:ident, $f:ident, $f_dyn:ident, $type:ty, $param1_type:ty, $param2_type:ty, $op:ident) => {
-        fn $f_unchecked<Lout>(&self, param1: $param1_type, param2: $param2_type, out: &mut Tensor<$type, S, Lout, P>)
-        where
-            Lout: for<'a> LayoutMut<'a, $type>,
-        {
-            let chunk_size = self.opt_chunk_size();
-                
-                for (chunk_self, chunk_out) in self
-                    .chunks(chunk_size)
-                    .zip(out.chunks_mut(chunk_size))
-                {
-                    chunk_self
-                        .par_iter()
-                        .zip(chunk_out.par_iter_mut())
-                        .for_each(|(x, y)| *y = x.$op(param1, param2));
-                }
-        }
-
-        pub fn $f(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, P::Layout, P>
-        where
-            S: StaticShape,
-            P: StaticAllocationPolicy<$type, S>,
-        {
-            let mut out = Tensor::default();
-
-            self.$f_unchecked(param1, param2, &mut out);
-
-            out
-        }
-
-        pub fn $f_dyn(&self, param1: $param1_type, param2: $param2_type) -> Tensor<$type, S, P::Layout, P>
-        where
-            P: DynamicAllocationPolicy<$type>,
-        {
-            let mut out = Tensor::alloc(self.shape());
-
-            self.$f_unchecked(param1, param2, &mut out);
-
-            out
-        }
-    };
-}
-
+#[expand_operations(
+    exp<T=f64>,
+    exp2<T=f64>,
+    exp_m1<T=f64>,
+    ln<T=f64>,
+    ln_1p<T=f64>,
+    log2<T=f64>,
+    log10<T=f64>,
+    sin<T=f64>,
+    cos<T=f64>,
+    tan<T=f64>,
+    sinh<T=f64>,
+    cosh<T=f64>,
+    tanh<T=f64>,
+    asin<T=f64>,
+    acos<T=f64>,
+    atan<T=f64>,
+    asinh<T=f64>,
+    acosh<T=f64>,
+    atanh<T=f64>,
+    sqrt<T=f64>,
+    cbrt<T=f64>,
+    abs<T=f64>,
+    signum<T=f64>,
+    ceil<T=f64>,
+    floor<T=f64>,
+    round<T=f64>,
+    recip<T=f64>,
+    to_degrees<T=f64>,
+    to_radians<T=f64>,
+    exp<T=f32>,
+    exp2<T=f32>,
+    exp_m1<T=f32>,
+    ln<T=f32>,
+    ln_1p<T=f32>,
+    log2<T=f32>,
+    log10<T=f32>,
+    sin<T=f32>,
+    cos<T=f32>,
+    tan<T=f32>,
+    sinh<T=f32>,
+    cosh<T=f32>,
+    tanh<T=f32>,
+    asin<T=f32>,
+    acos<T=f32>,
+    atan<T=f32>,
+    asinh<T=f32>,
+    acosh<T=f32>,
+    atanh<T=f32>,
+    sqrt<T=f32>,
+    cbrt<T=f32>,
+    abs<T=f32>,
+    signum<T=f32>,
+    ceil<T=f32>,
+    floor<T=f32>,
+    round<T=f32>,
+    recip<T=f32>,
+    to_degrees<T=f32>,
+    to_radians<T=f32>,
+    abs<T=i128>,
+    signum<T=i128>,
+    abs<T=i64>,
+    signum<T=i64>,
+    abs<T=i32>,
+    signum<T=i32>,
+    abs<T=i16>,
+    signum<T=i16>,
+    abs<T=i8>,
+    signum<T=i8>,
+)]
 impl<T, S, L, P> Tensor<T, S, L, P>
 where
-    T: Send + Sync + Copy,
-    L: for<'a> Layout<'a, T>,
+    L: for <'a> Layout<'a, T>,
 {
-    binary_core_op!(add_unchecked, add, add_static, add_dyn, Add, +);
-    binary_core_op!(sub_unchecked, sub, sub_static, sub_dyn, Sub, -);
-    binary_core_op!(mul_unchecked, mul, mul_static, mul_dyn, Mul, *);
-    binary_core_op!(div_unchecked, div, div_static, div_dyn, Div, /);
-    binary_core_op!(rem_unchecked, rem, rem_static, rem_dyn, Rem, %);
+    #[inline]
+    fn unchecked<Lout>(&self, out: &mut Tensor<T, S, Lout, P>)
+    where
+        Lout: for<'a> LayoutMut<'a, T>,
+    {
+        let chunk_size = self.opt_chunk_size();
+            
+            for (chunk_self, chunk_out) in self
+                .chunks(chunk_size)
+                .zip(out.chunks_mut(chunk_size))
+            {
+                chunk_self
+                    .par_iter()
+                    .zip(chunk_out.par_iter_mut())
+                    .for_each(|(x, y)| *y = x.placeholder());
+            }
+    }
 
-    scal_core_op!(scal_add_unchecked, scal_add, scal_add_dyn, Add, +);
-    scal_core_op!(scal_sub_unchecked, scal_sub, scal_sub_dyn, Sub, -);
-    scal_core_op!(scal_mul_unchecked, scal_mul, scal_mul_dyn, Mul, *);
-    scal_core_op!(scal_div_unchecked, scal_div, scal_div_dyn, Div, /);
-    scal_core_op!(scal_rem_unchecked, scal_rem, scal_rem_dyn, Rem, %);
+    pub fn operation(&self) -> Tensor<T, S, P::Layout, P>
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+    {
+        let mut out = Tensor::default();
+
+        self.unchecked(&mut out);
+
+        out
+    }
+
+    pub fn dynamic(&self) -> Tensor<T, S, P::Layout, P>
+    where
+        P: DynamicAllocationPolicy<T>,
+    {
+        let mut out = Tensor::alloc(self.shape());
+
+        self.unchecked(&mut out);
+
+        out
+    }
 }
 
-impl<S, L, P> Tensor<f64, S, L, P>
+#[expand_operations(
+    mul_add<T=f64>(f64, f64) as scal_mul_add,
+    mul_add<T=f32>(f32, f32) as scal_mul_add,
+)]
+impl<T, S, L, P> Tensor<T, S, L, P>
 where
-    L: for<'a> Layout<'a, f64>,
+    L: for <'a> Layout<'a, T>,
 {
-    unary_math_op!(exp_unchecked, exp, exp_dyn, f64, exp);
-    unary_math_op!(exp2_unchecked, exp2, exp2_dyn, f64, exp2);
-    unary_math_op!(exp_m1_unchecked, exp_m1, exp_m1_dyn, f64, exp_m1);
-    unary_math_op!(ln_unchecked, ln, ln_dyn, f64, ln);
-    unary_math_op!(ln_1p_unchecked, ln_1p, ln_1p_dyn, f64, ln_1p);
-    unary_math_op!(log2_unchecked, log2, log2_dyn, f64, log2);
-    unary_math_op!(log10_unchecked, log10, log10_dyn, f64, log10);
-    unary_math_op!(sin_unchecked, sin, sin_dyn, f64, sin);
-    unary_math_op!(cos_unchecked, cos, cos_dyn, f64, cos);
-    unary_math_op!(tan_unchecked, tan, tan_dyn, f64, tan);
-    unary_math_op!(sinh_unchecked, sinh, sinh_dyn, f64, sinh);
-    unary_math_op!(cosh_unchecked, cosh, cosh_dyn, f64, cosh);
-    unary_math_op!(tanh_unchecked, tanh, tanh_dyn, f64, tanh);
-    unary_math_op!(asin_unchecked, asin, asin_dyn, f64, asin);
-    unary_math_op!(acos_unchecked, acos, acos_dyn, f64, acos);
-    unary_math_op!(atan_unchecked, atan, atan_dyn, f64, atan);
-    unary_math_op!(asinh_unchecked, asinh, asinh_dyn, f64, asinh);
-    unary_math_op!(acosh_unchecked, acosh, acosh_dyn, f64, acosh);
-    unary_math_op!(atanh_unchecked, atanh, atanh_dyn, f64, atanh);
-    unary_math_op!(sqrt_unchecked, sqrt, sqrt_dyn, f64, sqrt);
-    unary_math_op!(cbrt_unchecked, cbrt, cbrt_dyn, f64, cbrt);
-    unary_math_op!(abs_unchecked, abs, abs_dyn, f64, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, f64, signum);
-    unary_math_op!(ceil_unchecked, ceil, ceil_dyn, f64, ceil);
-    unary_math_op!(floor_unchecked, floor, floor_dyn, f64, floor);
-    unary_math_op!(round_unchecked, round, round_dyn, f64, round);
-    unary_math_op!(recip_unchecked, recip, recip_dyn, f64, recip);
-    unary_math_op!(to_degrees_unchecked, to_degrees, to_degrees_dyn, f64, to_degrees);
-    unary_math_op!(to_radians_unchecked, to_radians, to_radians_dyn, f64, to_radians);
+    #[inline]
+    fn unchecked<Lout>(&self, param1: type0, param2: type1, out: &mut Tensor<T, S, Lout, P>)
+    where
+        Lout: for<'a> LayoutMut<'a, T>,
+    {
+        let chunk_size = self.opt_chunk_size();
+            
+            for (chunk_self, chunk_out) in self
+                .chunks(chunk_size)
+                .zip(out.chunks_mut(chunk_size))
+            {
+                chunk_self
+                    .par_iter()
+                    .zip(chunk_out.par_iter_mut())
+                    .for_each(|(x, y)| *y = x.placeholder(param1, param2));
+            }
+    }
 
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, f64, f64, div_euclid);
-    param_unary_math_op!(scal_max_unchecked, scal_max, scla_max_dyn, f64, f64, max);
-    param_unary_math_op!(scal_min_unchecked, scal_min, scal_min_dyn, f64, f64, min);
-    param_unary_math_op!(powf_unchecked, powf, powf_dyn, f64, f64, powf);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, f64, f64, rem_euclid);
-    param_unary_math_op!(powi_unchecked, powi, powi_dyn, f64, i32, powi);
+    pub fn operation(&self, param1: type0, param2: type1) -> Tensor<T, S, P::Layout, P>
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+    {
+        let mut out = Tensor::default();
 
-    binary_math_op!(atan2_unchecked, atan2, atan2_static, atan2_dyn, f64, atan2);
-    binary_math_op!(copysign_unchecked, copysign, copysign_static, copysign_dyn, f64, copysign);
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, f64, div_euclid);
-    binary_math_op!(max_unchecked, max, max_static, max_dyn, f64, max);
-    binary_math_op!(min_unchecked, min, min_static, min_dyn, f64, min);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, f64, rem_euclid);
+        self.unchecked(param1, param2, &mut out);
 
-    ternary_math_op!(mul_add_unchecked, mul_add, mul_add_static, mul_add_dyn, f64, mul_add);
+        out
+    }
 
-    two_param_unary_math_op!(scal_mul_add_unchecked, scal_mul_add, scal_mul_add_dyn, f64, f64, f64, mul_add);
+    pub fn dynamic(&self, param1: type0, param2: type1) -> Tensor<T, S, P::Layout, P>
+    where
+        P: DynamicAllocationPolicy<T>,
+    {
+        let mut out = Tensor::alloc(self.shape());
+
+        self.unchecked(param1, param2, &mut out);
+
+        out
+    }
 }
 
-impl<S, L, P> Tensor<f32, S, L, P>
+#[expand_operations(
+    mul_add<T=f64>,
+    mul_add<T=f32>,
+)]
+impl<T, S, L, P> Tensor<T, S, L, P>
 where
-    L: for<'a> Layout<'a, f32>,
+    L: for <'a> Layout<'a, T>,
 {
-    unary_math_op!(exp_unchecked, exp, exp_dyn, f32, exp);
-    unary_math_op!(exp2_unchecked, exp2, exp2_dyn, f32, exp2);
-    unary_math_op!(exp_m1_unchecked, exp_m1, exp_m1_dyn, f32, exp_m1);
-    unary_math_op!(ln_unchecked, ln, ln_dyn, f32, ln);
-    unary_math_op!(ln_1p_unchecked, ln_1p, ln_1p_dyn, f32, ln_1p);
-    unary_math_op!(log2_unchecked, log2, log2_dyn, f32, log2);
-    unary_math_op!(log10_unchecked, log10, log10_dyn, f32, log10);
-    unary_math_op!(sin_unchecked, sin, sin_dyn, f32, sin);
-    unary_math_op!(cos_unchecked, cos, cos_dyn, f32, cos);
-    unary_math_op!(tan_unchecked, tan, tan_dyn, f32, tan);
-    unary_math_op!(sinh_unchecked, sinh, sinh_dyn, f32, sinh);
-    unary_math_op!(cosh_unchecked, cosh, cosh_dyn, f32, cosh);
-    unary_math_op!(tanh_unchecked, tanh, tanh_dyn, f32, tanh);
-    unary_math_op!(asin_unchecked, asin, asin_dyn, f32, asin);
-    unary_math_op!(acos_unchecked, acos, acos_dyn, f32, acos);
-    unary_math_op!(atan_unchecked, atan, atan_dyn, f32, atan);
-    unary_math_op!(asinh_unchecked, asinh, asinh_dyn, f32, asinh);
-    unary_math_op!(acosh_unchecked, acosh, acosh_dyn, f32, acosh);
-    unary_math_op!(atanh_unchecked, atanh, atanh_dyn, f32, atanh);
-    unary_math_op!(sqrt_unchecked, sqrt, sqrt_dyn, f32, sqrt);
-    unary_math_op!(cbrt_unchecked, cbrt, cbrt_dyn, f32, cbrt);
-    unary_math_op!(abs_unchecked, abs, abs_dyn, f32, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, f32, signum);
-    unary_math_op!(ceil_unchecked, ceil, ceil_dyn, f32, ceil);
-    unary_math_op!(floor_unchecked, floor, floor_dyn, f32, floor);
-    unary_math_op!(round_unchecked, round, round_dyn, f32, round);
-    unary_math_op!(recip_unchecked, recip, recip_dyn, f32, recip);
-    unary_math_op!(to_degrees_unchecked, to_degrees, to_degrees_dyn, f32, to_degrees);
-    unary_math_op!(to_radians_unchecked, to_radians, to_radians_dyn, f32, to_radians);
+    #[inline]
+    fn unchecked<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2, Sout, Lout>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>, out: &mut Tensor<T, Sout, Lout, P>)
+    where
+        Lrhs1: for<'a> Layout<'a, T>,
+        Lrhs2: for<'a> Layout<'a, T>,
+        Lout: for<'a> LayoutMut<'a, T>,
+    {
+        let chunk_size = self
+            .opt_chunk_size()
+            .min(other1.opt_chunk_size())
+            .min(other2.opt_chunk_size());
 
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, f32, f32, div_euclid);
-    param_unary_math_op!(scal_max_unchecked, scal_max, scla_max_dyn, f32, f32, max);
-    param_unary_math_op!(scal_min_unchecked, scal_min, scal_min_dyn, f32, f32, min);
-    param_unary_math_op!(powf_unchecked, powf, powf_dyn, f32, f32, powf);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, f32, f32, rem_euclid);
-    param_unary_math_op!(powi_unchecked, powi, powi_dyn, f32, i32, powi);
-
-    binary_math_op!(atan2_unchecked, atan2, atan2_static, atan2_dyn, f32, atan2);
-    binary_math_op!(copysign_unchecked, copysign, copysign_static, copysign_dyn, f32, copysign);
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, f32, div_euclid);
-    binary_math_op!(max_unchecked, max, max_static, max_dyn, f32, max);
-    binary_math_op!(min_unchecked, min, min_static, min_dyn, f32, min);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, f32, rem_euclid);
-
-    ternary_math_op!(mul_add_unchecked, mul_add, mul_add_static, mul_add_dyn, f32, mul_add);
-
-    two_param_unary_math_op!(scal_mul_add_unchecked, scal_mul_add, scal_mul_add_dyn, f32, f32, f32, mul_add);
-}
-
-impl<S, L, P> Tensor<u128, S, L, P>
-where
-    L: for<'a> Layout<'a, u128>,
-{
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, u128, u128, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, u128, u128, rem_euclid);
+        for (((chunk_self, chunk_other1), chunk_other2), chunk_out) in self
+            .chunks(chunk_size)
+            .zip(other1.chunks(chunk_size))
+            .zip(other2.chunks(chunk_size))
+            .zip(out.chunks_mut(chunk_size))
+        {
+            chunk_self.par_iter()
+                .zip(chunk_other1.par_iter())
+                .zip(chunk_other2.par_iter())
+                .zip(chunk_out.par_iter_mut())
+                .for_each(|(((x, y1), y2), z)| *z = x.placeholder(*y1, *y2));
+        }
+    }
     
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, u128, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u128, rem_euclid);
-}
+    pub fn operation<Lrhs1, Prhs1, Lrhs2, Prhs2>(&self, other1: &Tensor<T, S, Lrhs1, Prhs1>, other2: &Tensor<T, S, Lrhs2, Prhs2>) -> Tensor<T, S, P::Layout, P>
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+        Lrhs1: for<'a> Layout<'a, T>,
+        Lrhs2: for<'a> Layout<'a, T>,
+    {
+        let mut out = Tensor::default();
+        
+        self.unchecked(other1, other2, &mut out);
 
-impl<S, L, P> Tensor<u64, S, L, P>
-where
-    L: for<'a> Layout<'a, u64>,
-{
+        out
+    }
 
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, u64, u64, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, u64, u64, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, u64, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u64, rem_euclid);
-}
+    pub fn coerce<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>) -> Tensor<T, <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output, P::Layout, P>
+    where
+        S: Same<Srhs1> + Same<Srhs2> + ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>,
+        <S as Same<Srhs1>>::Output: TRUE,
+        <S as Same<Srhs2>>::Output: TRUE,
+        P: StaticAllocationPolicy<T, <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output>,
+        Srhs1: Same<Srhs2> + ReprShapeDyn<T, Srhs2>,
+        <Srhs1 as Same<Srhs2>>::Output: TRUE,
+        Lrhs1: for<'a> Layout<'a, T>,
+        Lrhs2: for<'a> Layout<'a, T>,
+    {
+        let self_shape = self.shape();
+        let other1_shape = other1.shape();
+        let other2_shape = other2.shape();
+        assert_eq!(
+            self_shape,
+            other1_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other1_shape
+        );
+        assert_eq!(
+            self_shape,
+            other2_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other2_shape
+        );
 
-impl<S, L, P> Tensor<u32, S, L, P>
-where
-    L: for<'a> Layout<'a, u32>,
-{
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, u32, u32, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, u32, u32, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, u32, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u32, rem_euclid);
-}
+        let mut out = Tensor::default();
 
-impl<S, L, P> Tensor<u16, S, L, P>
-where
-    L: for<'a> Layout<'a, u16>,
-{
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, u16, u16, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, u16, u16, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, u16, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u16, rem_euclid);
-}
+        self.unchecked(other1, other2, &mut out);
 
-impl<S, L, P> Tensor<u8, S, L, P>
-where
-    L: for<'a> Layout<'a, u8>,
-{
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, u8, u8, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, u8, u8, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, u8, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, u8, rem_euclid);
-}
+        out
+    }
 
-impl<S, L, P> Tensor<i128, S, L, P>
-where
-    L: for<'a> Layout<'a, i128>,
-{
-    unary_math_op!(abs_unchecked, abs, abs_dyn, i128, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, i128, signum);
+    pub fn dynamic<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>) -> Tensor<T, <S as ReprShapeDyn<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output, P::Layout, P>
+    where
+        S: Same<Srhs1> + Same<Srhs2> + ReprShapeDyn<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>,
+        <S as Same<Srhs1>>::Output: TRUE,
+        <S as Same<Srhs2>>::Output: TRUE,
+        P: DynamicAllocationPolicy<T>,
+        Srhs1: Same<Srhs2> + ReprShapeDyn<T, Srhs2>,
+        <Srhs1 as Same<Srhs2>>::Output: TRUE,
+        Lrhs1: for<'a> Layout<'a, T>,
+        Lrhs2: for<'a> Layout<'a, T>,
+    {
+        let self_shape = self.shape();
+        let other1_shape = other1.shape();
+        let other2_shape = other2.shape();
+        assert_eq!(
+            self_shape,
+            other1_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other1_shape
+        );
+        assert_eq!(
+            self_shape,
+            other2_shape,
+            "Tensors must have same shape, got {:?} and {:?}. The use of static shapes (compile-time-known type-level shapes) is strongly recommended.",
+            self_shape,
+            other2_shape
+        );
 
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, i128, i128, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, i128, i128, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, i128, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i128, rem_euclid);
-}
+        let mut out = Tensor::alloc(self_shape);
 
-impl<S, L, P> Tensor<i64, S, L, P>
-where
-    L: for<'a> Layout<'a, i64>,
-{
-    unary_math_op!(abs_unchecked, abs, abs_dyn, i64, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, i64, signum);
+        self.unchecked(other1, other2, &mut out);
 
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, i64, i64, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, i64, i64, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, i64, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i64, rem_euclid);
-}
-
-impl<S, L, P> Tensor<i32, S, L, P>
-where
-    L: for<'a> Layout<'a, i32>,
-{
-    unary_math_op!(abs_unchecked, abs, abs_dyn, i32, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, i32, signum);
-
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, i32, i32, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, i32, i32, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, i32, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i32, rem_euclid);
-}
-
-impl<S, L, P> Tensor<i16, S, L, P>
-where
-    L: for<'a> Layout<'a, i16>,
-{
-    unary_math_op!(abs_unchecked, abs, abs_dyn, i16, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, i16, signum);
-
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, i16, i16, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, i16, i16, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, i16, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i16, rem_euclid);
-}
-
-impl<S, L, P> Tensor<i8, S, L, P>
-where
-    L: for<'a> Layout<'a, i8>,
-{
-    unary_math_op!(abs_unchecked, abs, abs_dyn, i8, abs);
-    unary_math_op!(signum_unchecked, signum, signum_dyn, i8, signum);
-
-    param_unary_math_op!(scal_div_euclid_unchecked, scal_div_euclid, scal_div_euclid_dyn, i8, i8, div_euclid);
-    param_unary_math_op!(scal_rem_euclid_unchecked, scal_rem_euclid, scal_rem_euclid_dyn, i8, i8, rem_euclid);
-    
-    binary_math_op!(div_euclid_unchecked, div_euclid, div_euclid_static, div_euclid_dyn, i8, div_euclid);
-    binary_math_op!(rem_euclid_unchecked, rem_euclid, rem_euclid_static, rem_euclid_dyn, i8, rem_euclid);
+        out
+    }
 }
