@@ -1,10 +1,10 @@
 use super::layout::{Alloc, Layout};
 use super::shape::{
     internal_strides_in_place, Broadcast, Same, SameNumElements, Shape, StaticShape, StridedShape,
-    StridedShapeDyn, TRUE,
+    StridedShapeDyn, Transpose, TRUE,
 };
 use super::slice_layout::SliceLayout;
-use super::transpose_policy::{Contiguous, Strided};
+use super::transpose_policy::{Contiguous, Strided, TransposePolicy};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -241,6 +241,23 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
+    pub fn transpose<'a>(&'a self) -> Tensor<T, <S as Transpose>::Output, C::Transposed, L::View, P>
+    where
+        S: Transpose,
+        C: TransposePolicy,
+        L: Layout<'a, T>,
+    {
+        Tensor {
+            layout: self.as_view_unchecked(
+                self.shape().into_iter().rev().collect(),
+                self.strides().into_iter().rev().collect(),
+                self.num_elements(),
+                1,
+            ),
+            _phantoms: PhantomData,
+        }
+    }
+
     pub fn as_static<'a, Z>(&'a self) -> Tensor<T, Z, C, L::View, P>
     where
         Z: StaticShape,
@@ -328,24 +345,6 @@ impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
             _phantoms: PhantomData,
         }
     }
-
-    // pub fn transpose<'a, Z>(&'a self) -> Tensor<T, Z, Contiguous, L::View, P>
-    // where
-    //     Z: StaticShape,
-    //     S: SameNumElements<T, Z>,
-    //     <S as SameNumElements<T, Z>>::Output: TRUE,
-    //     L: Layout<'a, T>,
-    // {
-    //     Tensor {
-    //         layout: self.as_view_unchecked(
-    //             Z::to_vec(),
-    //             Z::strides(),
-    //             Z::NUM_ELEMENTS,
-    //             Z::NUM_ELEMENTS,
-    //         ),
-    //         _phantoms: PhantomData,
-    //     }
-    // }
 }
 
 impl<T, S, C, L, P> Deref for Tensor<T, S, C, L, P> {

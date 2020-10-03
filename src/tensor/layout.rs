@@ -10,6 +10,7 @@ where
     fn shape(&self) -> Vec<usize>;
     fn strides(&self) -> Vec<usize>;
     fn opt_chunk_size(&self) -> usize;
+    fn num_elements(&self) -> usize;
     fn chunks(&'a self, chunk_size: usize) -> Self::Iter;
     fn as_view_unchecked(
         &'a self,

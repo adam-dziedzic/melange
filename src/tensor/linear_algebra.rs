@@ -5,7 +5,7 @@ use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
 use super::layout::Layout;
 use super::shape::{Shape2D, TRUE};
 use super::tensor::Tensor;
-use super::transpose_policy::{Contiguous, TransposePolicy};
+use super::transpose_policy::{Contiguous, BLASPolicy};
 use cblas::{dgemm, sgemm};
 use road_ai_macros::expand_operations;
 use typenum::{Eq, IsEqual, Unsigned};
@@ -17,7 +17,7 @@ use typenum::{Eq, IsEqual, Unsigned};
 impl<T, M, K, C, L, P> Tensor<T, Shape2D<M, K>, C, L, P>
 where
     L: for<'a> Layout<'a, T>,
-    C: TransposePolicy,
+    C: BLASPolicy,
 {
     pub fn operation<N, Crhs, Lrhs, Prhs>(
         &self,
@@ -28,7 +28,7 @@ where
         N: Unsigned,
         K: Unsigned,
         Lrhs: for<'a> Layout<'a, T>,
-        Crhs: TransposePolicy,
+        Crhs: BLASPolicy,
         P: StaticAllocationPolicy<T, Shape2D<M, N>>,
     {
         let mut out: Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P> = Tensor::default();
@@ -65,7 +65,7 @@ where
         K: IsEqual<Krhs>,
         Eq<K, Krhs>: TRUE,
         Lrhs: for<'a> Layout<'a, T>,
-        Crhs: TransposePolicy,
+        Crhs: BLASPolicy,
         P: StaticAllocationPolicy<T, Shape2D<M, N>>,
     {
         let self_shape = self.shape();
@@ -107,7 +107,7 @@ where
         K: IsEqual<Krhs>,
         Eq<K, Krhs>: TRUE,
         Lrhs: for<'a> Layout<'a, T>,
-        Crhs: TransposePolicy,
+        Crhs: BLASPolicy,
         P: DynamicAllocationPolicy<T>,
     {
         let self_shape = self.shape();

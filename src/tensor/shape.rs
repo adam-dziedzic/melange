@@ -454,6 +454,37 @@ where
     type Output = <Eq<Ax, Sub1<Length<Self>>> as If<D, <Ar as At<Ax>>::Output>>::Output;
 }
 
+pub unsafe trait Insert<S> {
+    type Output;
+}
+
+unsafe impl<S> Insert<S> for ATerm {
+    type Output = TArr<S, ATerm>;
+}
+
+unsafe impl<S, A, Z> Insert<Z> for TArr<S, A>
+where
+    A: Insert<Z>,
+{
+    type Output = TArr<S, <A as Insert<Z>>::Output>;
+}
+
+pub unsafe trait Transpose {
+    type Output;
+}
+
+unsafe impl Transpose for ATerm {
+    type Output = ATerm;
+}
+
+unsafe impl<S, A> Transpose for TArr<S, A>
+where
+    A: Transpose,
+    <A as Transpose>::Output: Insert<S>,
+{
+    type Output = <<A as Transpose>::Output as Insert<S>>::Output;
+}
+
 pub type Shape1D<S0> = TArr<S0, ATerm>;
 pub type Shape2D<S0, S1> = TArr<S1, TArr<S0, ATerm>>;
 pub type Shape3D<S0, S1, S2> = TArr<S2, TArr<S1, TArr<S0, ATerm>>>;

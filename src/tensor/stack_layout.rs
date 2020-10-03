@@ -42,8 +42,14 @@ where
     fn strides(&self) -> Vec<usize> {
         S::to_vec()
     }
+
     #[inline]
     fn opt_chunk_size(&self) -> usize {
+        S::NUM_ELEMENTS
+    }
+
+    #[inline]
+    fn num_elements(&self) -> usize {
         S::NUM_ELEMENTS
     }
 

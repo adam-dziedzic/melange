@@ -51,6 +51,11 @@ where
     }
 
     #[inline]
+    fn num_elements(&self) -> usize {
+        self.data.len()
+    }
+
+    #[inline]
     fn chunks(&'a self, chunk_size: usize) -> Self::Iter {
         self.data.chunks(chunk_size)
     }

@@ -66,6 +66,7 @@ mod tests {
             1
         );
         assert_eq!(<Shape4D<U5, U1, U3, U2> as At<U2>>::Output::USIZE, 3);
+        assert_eq!(<<Shape4D<U4, U3, U6, U6> as Transpose>::Output as StaticShape>::to_vec(), vec![6, 6, 3, 4]);
     }
 
     #[test]
@@ -374,6 +375,18 @@ mod tests {
 
         let d: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&d_data);
         assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
+    fn transpose() {
+        let a: SliceTensor<i32, Shape2D<U2, U3>> = Tensor::from_slice(&[1, 2, 3, 4, 5, 6]);
+        let b = a.transpose();
+
+        let c: SliceTensor<i32, Shape2D<U3, U2>> = Tensor::from_slice(&[1, 4, 2, 5, 3, 6]);
+        assert_eq!(*b, *c);
+        assert_eq!(b.shape(), vec![3, 2]);
+        assert_eq!(b.strides(), vec![1, 3]);
+        assert_eq!(b.opt_chunk_size(), 1);
     }
 }
 

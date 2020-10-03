@@ -65,6 +65,11 @@ where
     }
 
     #[inline]
+    fn num_elements(&self) -> usize {
+        self.num_elements
+    }
+
+    #[inline]
     fn chunks(&'b self, chunk_size: usize) -> Self::Iter {
         StridedChunks::new(&self, chunk_size)
     }
