@@ -1,15 +1,15 @@
-use std::iter::FromIterator;
 use proc_macro2::Ident;
-use syn::{ExprMethodCall, Type, PatType, GenericArgument, GenericParam, Generics};
+use std::iter::FromIterator;
 use syn::punctuated::Punctuated;
 use syn::visit_mut::{self, VisitMut};
+use syn::{Expr, ExprCall, ExprMethodCall, ExprPath, GenericParam, Generics, PatType, Type};
 
 pub struct FindReplaceExprMethodCall {
     pub find: Ident,
     pub replace: Ident,
 }
 
-pub struct FindReplaceGenericArgument {
+pub struct FindReplaceType {
     pub find: Ident,
     pub replace: Type,
 }
@@ -30,31 +30,47 @@ impl VisitMut for FindReplaceExprMethodCall {
         }
         visit_mut::visit_expr_method_call_mut(self, node);
     }
+
+    fn visit_expr_call_mut(&mut self, node: &mut ExprCall) {
+        if let Expr::Path(func_path) = &*node.func {
+            if func_path.path.is_ident(&self.find) {
+                node.func = Box::new(Expr::Path(ExprPath {
+                    attrs: Vec::new(),
+                    qself: None,
+                    path: self.replace.clone().into(),
+                }));
+            }
+        }
+        visit_mut::visit_expr_call_mut(self, node);
+    }
 }
 
-impl VisitMut for FindReplaceGenericArgument {
-    fn visit_generic_argument_mut(&mut self, node: &mut GenericArgument) {
-        if let GenericArgument::Type(generic_type) = &node {
-            if let Type::Path(type_path) = &generic_type {
-                if type_path.path.is_ident(&self.find) {
-                    *node = GenericArgument::Type(self.replace.clone())
-                }
+impl VisitMut for FindReplaceType {
+    fn visit_type_mut(&mut self, node: &mut Type) {
+        if let Type::Path(type_path) = &node {
+            if type_path.path.is_ident(&self.find) {
+                *node = self.replace.clone();
             }
         }
 
-        visit_mut::visit_generic_argument_mut(self, node);
+        visit_mut::visit_type_mut(self, node);
     }
 }
 
 impl VisitMut for RemoveGenerics {
     fn visit_generics_mut(&mut self, node: &mut Generics) {
-        node.params = Punctuated::from_iter(node.params.iter().filter(|x| {
-            if let GenericParam::Type(type_param) = &x {
-                return type_param.ident != self.find;
-            }
+        node.params = Punctuated::from_iter(
+            node.params
+                .iter()
+                .filter(|x| {
+                    if let GenericParam::Type(type_param) = &x {
+                        return type_param.ident != self.find;
+                    }
 
-            true
-        }).cloned());
+                    true
+                })
+                .cloned(),
+        );
 
         visit_mut::visit_generics_mut(self, node);
     }

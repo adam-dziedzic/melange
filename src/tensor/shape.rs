@@ -1,10 +1,21 @@
-use typenum::{Bit, UInt, U1, B0, B1, TArr, ATerm, Equal, Unsigned};
-use typenum::type_operators::*;
+use generic_array::ArrayLength;
 use typenum::operator_aliases::*;
 use typenum::private::InternalMarker;
-use generic_array::ArrayLength;
+use typenum::type_operators::*;
+use typenum::{ATerm, Bit, Equal, TArr, UInt, Unsigned, B0, B1, U0, U1};
 // use typenum::marker_traits::*;
 use std::ops::*;
+
+pub fn internal_strides_in_place(mut shape: Vec<usize>) -> Vec<usize> {
+    let mut product = 1;
+    for stride in shape.iter_mut().rev() {
+        let tmp = product;
+        product *= *stride;
+        *stride = tmp;
+    }
+
+    shape
+}
 
 pub unsafe trait TRUE {}
 unsafe impl TRUE for B1 {}
@@ -12,7 +23,7 @@ unsafe impl TRUE for B1 {}
 pub struct Dyn;
 impl<U> Cmp<U> for Dyn
 where
-    U: Dim
+    U: Dim,
 {
     type Output = Equal;
 
@@ -21,8 +32,7 @@ where
         Equal
     }
 }
-impl<U, B> Cmp<Dyn> for UInt<U, B>
-{
+impl<U, B> Cmp<Dyn> for UInt<U, B> {
     type Output = Equal;
 
     #[inline]
@@ -56,7 +66,8 @@ unsafe impl<U, B> StaticDim for UInt<U, B>
 where
     U: Unsigned,
     B: Bit,
-{}
+{
+}
 
 pub unsafe trait Shape {
     const LEN: usize;
@@ -92,15 +103,14 @@ where
     const LEN: usize = A::LEN + 1;
 
     fn runtime_compat(shape: &[usize]) -> bool {
-        Self::LEN == shape.len() &&
-        D::runtime_eq(shape[A::LEN]) &&
-        A::runtime_compat(&shape[..A::LEN])
+        Self::LEN == shape.len()
+            && D::runtime_eq(shape[A::LEN])
+            && A::runtime_compat(&shape[..A::LEN])
     }
 }
 
 pub unsafe trait StaticShape: Shape {
     const NUM_ELEMENTS: usize;
-    
     fn to_vec() -> Vec<usize>;
     fn strides() -> Vec<usize>;
 }
@@ -153,16 +163,7 @@ where
 
     #[inline]
     fn strides() -> Vec<usize> {
-        let mut product = 1;
-        let mut strides_vec = Self::to_vec();
-
-        for stride in strides_vec.iter_mut().rev() {
-            let tmp = product;
-            product *= *stride;
-            *stride = tmp;
-        }
-
-        strides_vec
+        internal_strides_in_place(Self::to_vec())
     }
 }
 
@@ -214,9 +215,65 @@ where
     Self: Same<TArr<SRhs, ARhs>>,
     S: ReprDim<SRhs>,
     A: ReprShape<T, ARhs>,
-    TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShape<T, ARhs>>::Output>: NumElements<T> + StaticShape,
+    TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShape<T, ARhs>>::Output>:
+        NumElements<T> + StaticShape,
 {
     type Output = TArr<<S as ReprDim<SRhs>>::Output, <A as ReprShape<T, ARhs>>::Output>;
+}
+
+pub unsafe trait StridedDim<Rhs> {
+    type Output;
+}
+
+unsafe impl<U, B, V> StridedDim<V> for UInt<U, B>
+where
+    V: StaticDim,
+    U: Div<V> + Rem<V>,
+    <U as Rem<V>>::Output: IsGreater<U0>,
+    <U as Div<V>>::Output: Add<Gr<<U as Rem<V>>::Output, U0>>,
+{
+    type Output = Sum<<U as Div<V>>::Output, Gr<<U as Rem<V>>::Output, U0>>;
+}
+
+unsafe impl<V> StridedDim<V> for Dyn {
+    type Output = Dyn;
+}
+
+unsafe impl<U, B> StridedDim<Dyn> for UInt<U, B> {
+    type Output = Dyn;
+}
+
+pub unsafe trait StridedShape<Rhs> {
+    type Output: StaticShape;
+}
+
+unsafe impl StridedShape<ATerm> for ATerm {
+    type Output = ATerm;
+}
+
+unsafe impl<S, A, SRhs, ARhs> StridedShape<TArr<SRhs, ARhs>> for TArr<S, A>
+where
+    S: StridedDim<SRhs>,
+    A: StridedShape<ARhs>,
+    TArr<<S as StridedDim<SRhs>>::Output, <A as StridedShape<ARhs>>::Output>: StaticShape,
+{
+    type Output = TArr<<S as StridedDim<SRhs>>::Output, <A as StridedShape<ARhs>>::Output>;
+}
+
+pub unsafe trait StridedShapeDyn<Rhs> {
+    type Output;
+}
+
+unsafe impl StridedShapeDyn<ATerm> for ATerm {
+    type Output = ATerm;
+}
+
+unsafe impl<S, A, SRhs, ARhs> StridedShapeDyn<TArr<SRhs, ARhs>> for TArr<S, A>
+where
+    S: StridedDim<SRhs>,
+    A: StridedShape<ARhs>,
+{
+    type Output = TArr<<S as StridedDim<SRhs>>::Output, <A as StridedShape<ARhs>>::Output>;
 }
 
 pub unsafe trait Same<Rhs> {
@@ -276,7 +333,7 @@ where
     Eq<S, SRhs>: BitOr<Eq<S, U1>>,
     Or<Eq<S, SRhs>, Eq<S, U1>>: BitOr<Eq<SRhs, U1>>,
     A: Broadcast<ARhs>,
-    Or<Or<Eq<S, SRhs>, Eq<S, U1>>, Eq<SRhs, U1>>: BitAnd<<A as Broadcast<ARhs>>::Output>
+    Or<Or<Eq<S, SRhs>, Eq<S, U1>>, Eq<SRhs, U1>>: BitAnd<<A as Broadcast<ARhs>>::Output>,
 {
     type Output = And<Or<Or<Eq<S, SRhs>, Eq<S, U1>>, Eq<SRhs, U1>>, <A as Broadcast<ARhs>>::Output>;
 }
@@ -310,7 +367,7 @@ unsafe impl<T, S, A, Rhs> SameNumElements<T, Rhs> for TArr<S, A>
 where
     Self: NumElements<T>,
     Rhs: NumElements<T>,
-    <Self as NumElements<T>>::Output: IsEqual<<Rhs as NumElements<T>>::Output>
+    <Self as NumElements<T>>::Output: IsEqual<<Rhs as NumElements<T>>::Output>,
 {
     type Output = Eq<<Self as NumElements<T>>::Output, <Rhs as NumElements<T>>::Output>;
 }
@@ -343,7 +400,10 @@ where
     Ar: Reduction<Ax>,
     Eq<Ax, Sub1<Length<Self>>>: If<TArr<U1, Ar>, TArr<D, <Ar as Reduction<Ax>>::Output>>,
 {
-    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<TArr<U1, Ar>, TArr<D, <Ar as Reduction<Ax>>::Output>>>::Output;
+    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<
+        TArr<U1, Ar>,
+        TArr<D, <Ar as Reduction<Ax>>::Output>,
+    >>::Output;
 }
 
 pub trait ReductionOptChunckSize<T, Ax>: StaticShape {
@@ -362,9 +422,15 @@ where
     Ax: IsEqual<Sub1<Length<Self>>>,
     Ar: ReductionOptChunckSize<T, Ax> + NumElements<T>,
     Eq<Ax, Sub1<Length<Self>>>: If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>,
-    <Eq<Ax, Sub1<Length<Self>>> as If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>>::Output: Unsigned,
+    <Eq<Ax, Sub1<Length<Self>>> as If<
+        U1,
+        Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>,
+    >>::Output: Unsigned,
 {
-    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<U1, Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>>>::Output;
+    type Output = <Eq<Ax, Sub1<Length<Self>>> as If<
+        U1,
+        Prod<D, <Ar as ReductionOptChunckSize<T, Ax>>::Output>,
+    >>::Output;
 }
 
 pub trait At<Ax>: StaticShape {
@@ -393,4 +459,5 @@ pub type Shape2D<S0, S1> = TArr<S1, TArr<S0, ATerm>>;
 pub type Shape3D<S0, S1, S2> = TArr<S2, TArr<S1, TArr<S0, ATerm>>>;
 pub type Shape4D<S0, S1, S2, S3> = TArr<S3, TArr<S2, TArr<S1, TArr<S0, ATerm>>>>;
 pub type Shape5D<S0, S1, S2, S3, S4> = TArr<S4, TArr<S3, TArr<S2, TArr<S1, TArr<S0, ATerm>>>>>;
-pub type Shape6D<S0, S1, S2, S3, S4, S5> = TArr<S5, TArr<S4, TArr<S3, TArr<S2, TArr<S1, TArr<S0, ATerm>>>>>>;
+pub type Shape6D<S0, S1, S2, S3, S4, S5> =
+    TArr<S5, TArr<S4, TArr<S3, TArr<S2, TArr<S1, TArr<S0, ATerm>>>>>>;

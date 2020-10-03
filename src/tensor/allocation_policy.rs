@@ -1,8 +1,8 @@
-use super::static_heap_layout::StaticHeapLayout;
 use super::heap_layout::HeapLayout;
+use super::layout::{Alloc, LayoutMut};
+use super::shape::{NumElements, StaticShape};
 use super::stack_layout::StackLayout;
-use super::layout::{LayoutMut, Alloc};
-use super::shape::{StaticShape, NumElements};
+use super::static_heap_layout::StaticHeapLayout;
 
 pub trait StaticAllocationPolicy<T, S> {
     type Layout: Default + for<'a> LayoutMut<'a, T>;
@@ -37,6 +37,7 @@ impl<T, S> StaticAllocationPolicy<T, S> for StackFirstPolicy
 where
     T: Default + 'static,
     S: StaticShape + NumElements<T>,
+    <S as NumElements<T>>::Output: 'static,
 {
     type Layout = StackLayout<T, S>;
 }

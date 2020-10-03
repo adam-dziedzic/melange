@@ -1,6 +1,8 @@
-pub trait Layout<'a, T>
+use std::ops::{Deref, DerefMut};
+
+pub trait Layout<'a, T>: Deref<Target = [T]>
 where
-    T: 'a
+    T: 'a,
 {
     type Iter: Iterator<Item = &'a [T]>;
     type View: Layout<'a, T>;
@@ -9,12 +11,18 @@ where
     fn strides(&self) -> Vec<usize>;
     fn opt_chunk_size(&self) -> usize;
     fn chunks(&'a self, chunk_size: usize) -> Self::Iter;
-    fn as_view_unchecked(&'a self, shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self::View;
+    fn as_view_unchecked(
+        &'a self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        num_elements: usize,
+        opt_chunk_size: usize,
+    ) -> Self::View;
 }
 
-pub trait LayoutMut<'a, T>
+pub trait LayoutMut<'a, T>: DerefMut<Target = [T]>
 where
-    T: 'a
+    T: 'a,
 {
     type IterMut: Iterator<Item = &'a mut [T]>;
 
@@ -24,5 +32,3 @@ where
 pub trait Alloc {
     fn alloc(shape: Vec<usize>) -> Self;
 }
-
-pub trait Contiguous {}

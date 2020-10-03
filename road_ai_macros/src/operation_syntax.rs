@@ -1,9 +1,9 @@
-use std::ops::Deref;
 use proc_macro2::Ident;
-use syn::{Result, Type, WherePredicate, Error};
+use std::ops::Deref;
 use syn::parse::{Parse, ParseStream};
-use syn::token::{As, Comma, Colon, Eq, Lt, Gt, Paren};
 use syn::punctuated::Punctuated;
+use syn::token::{As, Colon, Comma, Eq, Gt, Lt, Paren};
+use syn::{Error, Result, Type, WherePredicate};
 
 pub struct EqPredicate {
     pub lhs_ty: Ident,
@@ -59,13 +59,16 @@ impl Parse for Operation {
                 let gt_token = Some(input.parse()?);
 
                 (lt_token, bound, gt_token)
-            },
-            Err(_) => (None, None, None)
+            }
+            Err(_) => (None, None, None),
         };
 
         let (paren_token, types) = match syn::group::parse_parens(&input) {
-            Ok(parens) => (Some(parens.token), Some(Punctuated::parse_terminated(&parens.content)?)),
-            Err(_) => (None, None)
+            Ok(parens) => (
+                Some(parens.token),
+                Some(Punctuated::parse_terminated(&parens.content)?),
+            ),
+            Err(_) => (None, None),
         };
 
         let (as_token, alias) = match input.parse() {
@@ -74,10 +77,9 @@ impl Parse for Operation {
                 let alias = Some(input.parse()?);
 
                 (as_token, alias)
-            },
-            Err(_) => (None, None)
+            }
+            Err(_) => (None, None),
         };
-        
         Ok(Operation {
             ident,
             lt_token,
@@ -105,7 +107,6 @@ impl Parse for OperationSequence {
 
 impl Deref for OperationSequence {
     type Target = Punctuated<Operation, Comma>;
-    
     fn deref(&self) -> &Self::Target {
         &self.sequence
     }

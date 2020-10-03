@@ -1,6 +1,6 @@
-use std::ops::{Deref, DerefMut};
-use super::layout::{Layout, LayoutMut, Alloc, Contiguous};
+use super::layout::{Alloc, Layout, LayoutMut};
 use super::slice_layout::SliceLayout;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, PartialEq)]
 pub struct HeapLayout<T> {
@@ -22,7 +22,6 @@ where
             num_elements *= *stride;
             *stride = tmp;
         }
-        
         HeapLayout {
             data: vec![T::default(); num_elements],
             shape,
@@ -37,7 +36,6 @@ where
 {
     type Iter = std::slice::Chunks<'a, T>;
     type View = SliceLayout<'a, T>;
-    
     #[inline]
     fn shape(&self) -> Vec<usize> {
         self.shape.clone()
@@ -47,7 +45,6 @@ where
     fn strides(&self) -> Vec<usize> {
         self.strides.clone()
     }
-    
     #[inline]
     fn opt_chunk_size(&self) -> usize {
         self.data.len()
@@ -59,7 +56,13 @@ where
     }
 
     #[inline]
-    fn as_view_unchecked(&'a self, shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self::View {        
+    fn as_view_unchecked(
+        &'a self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        num_elements: usize,
+        opt_chunk_size: usize,
+    ) -> Self::View {
         SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
     }
 }
@@ -76,17 +79,14 @@ where
     }
 }
 
-impl<T> Contiguous for HeapLayout<T> {}
-
 impl<T> Deref for HeapLayout<T> {
     type Target = [T];
-    
     fn deref(&self) -> &Self::Target {
         self.data.as_slice()
     }
 }
 
-impl<T> DerefMut for HeapLayout<T> {    
+impl<T> DerefMut for HeapLayout<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.as_mut_slice()
     }

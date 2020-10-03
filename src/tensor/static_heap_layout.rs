@@ -1,8 +1,8 @@
-use std::ops::{Deref, DerefMut};
-use std::marker::PhantomData;
-use super::layout::{Layout, LayoutMut, Contiguous};
-use super::slice_layout::SliceLayout;
+use super::layout::{Layout, LayoutMut};
 use super::shape::StaticShape;
+use super::slice_layout::SliceLayout;
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, PartialEq)]
 pub struct StaticHeapLayout<T, S> {
@@ -30,7 +30,6 @@ where
 {
     type Iter = std::slice::Chunks<'a, T>;
     type View = SliceLayout<'a, T>;
-    
     #[inline]
     fn shape(&self) -> Vec<usize> {
         S::to_vec()
@@ -40,7 +39,6 @@ where
     fn strides(&self) -> Vec<usize> {
         S::strides()
     }
-    
     #[inline]
     fn opt_chunk_size(&self) -> usize {
         S::NUM_ELEMENTS
@@ -52,7 +50,13 @@ where
     }
 
     #[inline]
-    fn as_view_unchecked(&'a self, shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self::View {        
+    fn as_view_unchecked(
+        &'a self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        num_elements: usize,
+        opt_chunk_size: usize,
+    ) -> Self::View {
         SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
     }
 }
@@ -69,17 +73,14 @@ where
     }
 }
 
-impl<T, S> Contiguous for StaticHeapLayout<T, S> {}
-
 impl<T, S> Deref for StaticHeapLayout<T, S> {
     type Target = [T];
-    
     fn deref(&self) -> &Self::Target {
         self.data.as_slice()
     }
 }
 
-impl<T, S> DerefMut for StaticHeapLayout<T, S> {    
+impl<T, S> DerefMut for StaticHeapLayout<T, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.as_mut_slice()
     }

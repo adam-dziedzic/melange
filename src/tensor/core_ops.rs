@@ -1,10 +1,11 @@
-use std::ops::*;
+use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
+use super::layout::{Layout, LayoutMut};
+use super::shape::{ReprShape, ReprShapeDyn, Same, StaticShape, TRUE};
+use super::tensor::Tensor;
+use super::transpose_policy::Contiguous;
 use rayon::prelude::*;
 use road_ai_macros::expand_operations;
-use super::tensor::Tensor;
-use super::shape::{ReprShape, ReprShapeDyn, Same, StaticShape, TRUE};
-use super::layout::{Layout, LayoutMut};
-use super::allocation_policy::{StaticAllocationPolicy, DynamicAllocationPolicy};
+use std::ops::*;
 
 #[expand_operations(
     add<T: Send + Sync + Copy + Add<Output=T>>,
@@ -45,13 +46,16 @@ use super::allocation_policy::{StaticAllocationPolicy, DynamicAllocationPolicy};
     div_euclid<T=i8>,
     rem_euclid<T=i8>,
 )]
-impl<T, S, L, P> Tensor<T, S, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
-    L: for <'a> Layout<'a, T>,
+    L: for<'a> Layout<'a, T>,
 {
     #[inline]
-    fn unchecked<Srhs, Lrhs, Prhs, Sout, Lout>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>, out: &mut Tensor<T, Sout, Lout, P>)
-    where
+    fn unchecked<Srhs, Crhs, Lrhs, Prhs, Sout, Lout>(
+        &self,
+        other: &Tensor<T, Srhs, Crhs, Lrhs, Prhs>,
+        out: &mut Tensor<T, Sout, Contiguous, Lout, P>,
+    ) where
         Lrhs: for<'a> Layout<'a, T>,
         Lout: for<'a> LayoutMut<'a, T>,
     {
@@ -62,27 +66,33 @@ where
             .zip(other.chunks(chunk_size))
             .zip(out.chunks_mut(chunk_size))
         {
-            chunk_self.par_iter()
+            chunk_self
+                .par_iter()
                 .zip(chunk_other.par_iter())
                 .zip(chunk_out.par_iter_mut())
                 .for_each(|((x, y), z)| *z = x.placeholder(*y));
         }
     }
-    
-    pub fn operation<Lrhs, Prhs>(&self, other: &Tensor<T, S, Lrhs, Prhs>) -> Tensor<T, S, P::Layout, P>
+
+    pub fn operation<Crhs, Lrhs, Prhs>(
+        &self,
+        other: &Tensor<T, S, Crhs, Lrhs, Prhs>,
+    ) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         S: StaticShape,
         P: StaticAllocationPolicy<T, S>,
         Lrhs: for<'a> Layout<'a, T>,
     {
         let mut out = Tensor::default();
-        
         self.unchecked(other, &mut out);
 
         out
     }
 
-    pub fn coerce<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, P::Layout, P>
+    pub fn coerce<Srhs, Crhs, Lrhs, Prhs>(
+        &self,
+        other: &Tensor<T, Srhs, Crhs, Lrhs, Prhs>,
+    ) -> Tensor<T, <S as ReprShape<T, Srhs>>::Output, Contiguous, P::Layout, P>
     where
         S: Same<Srhs> + ReprShape<T, Srhs>,
         <S as Same<Srhs>>::Output: TRUE,
@@ -106,7 +116,10 @@ where
         out
     }
 
-    pub fn dynamic<Srhs, Lrhs, Prhs>(&self, other: &Tensor<T, Srhs, Lrhs, Prhs>) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, P::Layout, P>
+    pub fn dynamic<Srhs, Crhs, Lrhs, Prhs>(
+        &self,
+        other: &Tensor<T, Srhs, Crhs, Lrhs, Prhs>,
+    ) -> Tensor<T, <S as ReprShapeDyn<T, Srhs>>::Output, Contiguous, P::Layout, P>
     where
         S: Same<Srhs> + ReprShapeDyn<T, Srhs>,
         <S as Same<Srhs>>::Output: TRUE,
@@ -169,29 +182,26 @@ where
     div_euclid<T=i8>(i8) as scal_div_euclid,
     rem_euclid<T=i8>(i8) as scal_rem_euclid,
 )]
-impl<T, S, L, P> Tensor<T, S, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
-    L: for <'a> Layout<'a, T>,
+    L: for<'a> Layout<'a, T>,
 {
     #[inline]
-    fn unchecked<Lout>(&self, param: type0, out: &mut Tensor<T, S, Lout, P>)
+    fn unchecked<Lout>(&self, param: type0, out: &mut Tensor<T, S, Contiguous, Lout, P>)
     where
         Lout: for<'a> LayoutMut<'a, T>,
     {
         let chunk_size = self.opt_chunk_size();
-            
-            for (chunk_self, chunk_out) in self
-                .chunks(chunk_size)
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self
-                    .par_iter()
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|(x, y)| *y = x.placeholder(param));
-            }
+
+        for (chunk_self, chunk_out) in self.chunks(chunk_size).zip(out.chunks_mut(chunk_size)) {
+            chunk_self
+                .par_iter()
+                .zip(chunk_out.par_iter_mut())
+                .for_each(|(x, y)| *y = x.placeholder(param));
+        }
     }
 
-    pub fn operation(&self, param: type0) -> Tensor<T, S, P::Layout, P>
+    pub fn operation(&self, param: type0) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         S: StaticShape,
         P: StaticAllocationPolicy<T, S>,
@@ -203,7 +213,7 @@ where
         out
     }
 
-    pub fn dynamic(&self, param: type0) -> Tensor<T, S, P::Layout, P>
+    pub fn dynamic(&self, param: type0) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         P: DynamicAllocationPolicy<T>,
     {
@@ -285,29 +295,26 @@ where
     abs<T=i8>,
     signum<T=i8>,
 )]
-impl<T, S, L, P> Tensor<T, S, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
-    L: for <'a> Layout<'a, T>,
+    L: for<'a> Layout<'a, T>,
 {
     #[inline]
-    fn unchecked<Lout>(&self, out: &mut Tensor<T, S, Lout, P>)
+    fn unchecked<Lout>(&self, out: &mut Tensor<T, S, Contiguous, Lout, P>)
     where
         Lout: for<'a> LayoutMut<'a, T>,
     {
         let chunk_size = self.opt_chunk_size();
-            
-            for (chunk_self, chunk_out) in self
-                .chunks(chunk_size)
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self
-                    .par_iter()
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|(x, y)| *y = x.placeholder());
-            }
+
+        for (chunk_self, chunk_out) in self.chunks(chunk_size).zip(out.chunks_mut(chunk_size)) {
+            chunk_self
+                .par_iter()
+                .zip(chunk_out.par_iter_mut())
+                .for_each(|(x, y)| *y = x.placeholder());
+        }
     }
 
-    pub fn operation(&self) -> Tensor<T, S, P::Layout, P>
+    pub fn operation(&self) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         S: StaticShape,
         P: StaticAllocationPolicy<T, S>,
@@ -319,7 +326,7 @@ where
         out
     }
 
-    pub fn dynamic(&self) -> Tensor<T, S, P::Layout, P>
+    pub fn dynamic(&self) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         P: DynamicAllocationPolicy<T>,
     {
@@ -335,29 +342,30 @@ where
     mul_add<T=f64>(f64, f64) as scal_mul_add,
     mul_add<T=f32>(f32, f32) as scal_mul_add,
 )]
-impl<T, S, L, P> Tensor<T, S, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
-    L: for <'a> Layout<'a, T>,
+    L: for<'a> Layout<'a, T>,
 {
     #[inline]
-    fn unchecked<Lout>(&self, param1: type0, param2: type1, out: &mut Tensor<T, S, Lout, P>)
-    where
+    fn unchecked<Lout>(
+        &self,
+        param1: type0,
+        param2: type1,
+        out: &mut Tensor<T, S, Contiguous, Lout, P>,
+    ) where
         Lout: for<'a> LayoutMut<'a, T>,
     {
         let chunk_size = self.opt_chunk_size();
-            
-            for (chunk_self, chunk_out) in self
-                .chunks(chunk_size)
-                .zip(out.chunks_mut(chunk_size))
-            {
-                chunk_self
-                    .par_iter()
-                    .zip(chunk_out.par_iter_mut())
-                    .for_each(|(x, y)| *y = x.placeholder(param1, param2));
-            }
+
+        for (chunk_self, chunk_out) in self.chunks(chunk_size).zip(out.chunks_mut(chunk_size)) {
+            chunk_self
+                .par_iter()
+                .zip(chunk_out.par_iter_mut())
+                .for_each(|(x, y)| *y = x.placeholder(param1, param2));
+        }
     }
 
-    pub fn operation(&self, param1: type0, param2: type1) -> Tensor<T, S, P::Layout, P>
+    pub fn operation(&self, param1: type0, param2: type1) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         S: StaticShape,
         P: StaticAllocationPolicy<T, S>,
@@ -369,7 +377,7 @@ where
         out
     }
 
-    pub fn dynamic(&self, param1: type0, param2: type1) -> Tensor<T, S, P::Layout, P>
+    pub fn dynamic(&self, param1: type0, param2: type1) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         P: DynamicAllocationPolicy<T>,
     {
@@ -385,13 +393,17 @@ where
     mul_add<T=f64>,
     mul_add<T=f32>,
 )]
-impl<T, S, L, P> Tensor<T, S, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
-    L: for <'a> Layout<'a, T>,
+    L: for<'a> Layout<'a, T>,
 {
     #[inline]
-    fn unchecked<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2, Sout, Lout>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>, out: &mut Tensor<T, Sout, Lout, P>)
-    where
+    fn unchecked<Srhs1, Crhs1, Lrhs1, Prhs1, Srhs2, Crhs2, Lrhs2, Prhs2, Sout, Lout>(
+        &self,
+        other1: &Tensor<T, Srhs1, Crhs1, Lrhs1, Prhs1>,
+        other2: &Tensor<T, Srhs2, Crhs2, Lrhs2, Prhs2>,
+        out: &mut Tensor<T, Sout, Contiguous, Lout, P>,
+    ) where
         Lrhs1: for<'a> Layout<'a, T>,
         Lrhs2: for<'a> Layout<'a, T>,
         Lout: for<'a> LayoutMut<'a, T>,
@@ -407,15 +419,20 @@ where
             .zip(other2.chunks(chunk_size))
             .zip(out.chunks_mut(chunk_size))
         {
-            chunk_self.par_iter()
+            chunk_self
+                .par_iter()
                 .zip(chunk_other1.par_iter())
                 .zip(chunk_other2.par_iter())
                 .zip(chunk_out.par_iter_mut())
                 .for_each(|(((x, y1), y2), z)| *z = x.placeholder(*y1, *y2));
         }
     }
-    
-    pub fn operation<Lrhs1, Prhs1, Lrhs2, Prhs2>(&self, other1: &Tensor<T, S, Lrhs1, Prhs1>, other2: &Tensor<T, S, Lrhs2, Prhs2>) -> Tensor<T, S, P::Layout, P>
+
+    pub fn operation<Crhs1, Lrhs1, Prhs1, Crhs2, Lrhs2, Prhs2>(
+        &self,
+        other1: &Tensor<T, S, Crhs1, Lrhs1, Prhs1>,
+        other2: &Tensor<T, S, Crhs2, Lrhs2, Prhs2>,
+    ) -> Tensor<T, S, Contiguous, P::Layout, P>
     where
         S: StaticShape,
         P: StaticAllocationPolicy<T, S>,
@@ -423,18 +440,30 @@ where
         Lrhs2: for<'a> Layout<'a, T>,
     {
         let mut out = Tensor::default();
-        
         self.unchecked(other1, other2, &mut out);
 
         out
     }
 
-    pub fn coerce<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>) -> Tensor<T, <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output, P::Layout, P>
+    pub fn coerce<Srhs1, Crhs1, Lrhs1, Prhs1, Srhs2, Crhs2, Lrhs2, Prhs2>(
+        &self,
+        other1: &Tensor<T, Srhs1, Crhs1, Lrhs1, Prhs1>,
+        other2: &Tensor<T, Srhs2, Crhs2, Lrhs2, Prhs2>,
+    ) -> Tensor<
+        T,
+        <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output,
+        Contiguous,
+        P::Layout,
+        P,
+    >
     where
         S: Same<Srhs1> + Same<Srhs2> + ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>,
         <S as Same<Srhs1>>::Output: TRUE,
         <S as Same<Srhs2>>::Output: TRUE,
-        P: StaticAllocationPolicy<T, <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output>,
+        P: StaticAllocationPolicy<
+            T,
+            <S as ReprShape<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output,
+        >,
         Srhs1: Same<Srhs2> + ReprShapeDyn<T, Srhs2>,
         <Srhs1 as Same<Srhs2>>::Output: TRUE,
         Lrhs1: for<'a> Layout<'a, T>,
@@ -465,7 +494,17 @@ where
         out
     }
 
-    pub fn dynamic<Srhs1, Lrhs1, Prhs1, Srhs2, Lrhs2, Prhs2>(&self, other1: &Tensor<T, Srhs1, Lrhs1, Prhs1>, other2: &Tensor<T, Srhs2, Lrhs2, Prhs2>) -> Tensor<T, <S as ReprShapeDyn<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output, P::Layout, P>
+    pub fn dynamic<Srhs1, Crhs1, Lrhs1, Prhs1, Srhs2, Crhs2, Lrhs2, Prhs2>(
+        &self,
+        other1: &Tensor<T, Srhs1, Crhs1, Lrhs1, Prhs1>,
+        other2: &Tensor<T, Srhs2, Crhs2, Lrhs2, Prhs2>,
+    ) -> Tensor<
+        T,
+        <S as ReprShapeDyn<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>>::Output,
+        Contiguous,
+        P::Layout,
+        P,
+    >
     where
         S: Same<Srhs1> + Same<Srhs2> + ReprShapeDyn<T, <Srhs1 as ReprShapeDyn<T, Srhs2>>::Output>,
         <S as Same<Srhs1>>::Output: TRUE,

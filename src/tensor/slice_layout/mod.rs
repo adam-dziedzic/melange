@@ -1,6 +1,6 @@
-use std::ops::Deref;
+use super::layout::Layout;
 use rayon::prelude::*;
-use super::layout::{Layout};
+use std::ops::Deref;
 
 mod strided_chunks;
 use strided_chunks::StridedChunks;
@@ -16,15 +16,24 @@ pub struct SliceLayout<'a, T> {
 
 impl<'a, T> SliceLayout<'a, T> {
     fn linear_index(&self, position: &[usize]) -> usize {
-        position.iter().rev().zip(self.strides.iter().rev()).fold(0, |acc, (x, y)| acc + (x * y))
+        position
+            .iter()
+            .rev()
+            .zip(self.strides.iter().rev())
+            .fold(0, |acc, (x, y)| acc + (x * y))
     }
-    
     pub(super) fn chunk_at(&self, position: &[usize], size: usize) -> &[T] {
         let index = self.linear_index(position);
         &self.data[index..index + size]
     }
 
-    pub fn from_slice_unchecked(slice: &'a [T], shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self {        
+    pub fn from_slice_unchecked(
+        slice: &'a [T],
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        num_elements: usize,
+        opt_chunk_size: usize,
+    ) -> Self {
         SliceLayout {
             data: slice,
             shape,
@@ -41,7 +50,6 @@ where
 {
     type Iter = StridedChunks<'b, 'b, T>;
     type View = Self;
-    
     #[inline]
     fn shape(&self) -> Vec<usize> {
         self.shape.clone()
@@ -51,7 +59,6 @@ where
     fn strides(&self) -> Vec<usize> {
         self.strides.clone()
     }
-    
     #[inline]
     fn opt_chunk_size(&self) -> usize {
         self.opt_chunk_size
@@ -63,14 +70,19 @@ where
     }
 
     #[inline]
-    fn as_view_unchecked(&'b self, shape: Vec<usize>, strides: Vec<usize>, num_elements: usize, opt_chunk_size: usize) -> Self::View {        
+    fn as_view_unchecked(
+        &'b self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        num_elements: usize,
+        opt_chunk_size: usize,
+    ) -> Self::View {
         SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
     }
 }
 
 impl<'a, T> Deref for SliceLayout<'a, T> {
     type Target = [T];
-    
     fn deref(&self) -> &Self::Target {
         self.data
     }
@@ -86,9 +98,12 @@ where
         if self.shape != other.shape {
             return false;
         }
-        
         for (self_chunk, other_chunk) in self.chunks(chunk_size).zip(other.chunks(chunk_size)) {
-            if !self_chunk.par_iter().zip(other_chunk.par_iter()).all(|(x, y)| *x == *y) {
+            if !self_chunk
+                .par_iter()
+                .zip(other_chunk.par_iter())
+                .all(|(x, y)| *x == *y)
+            {
                 return false;
             }
         }
