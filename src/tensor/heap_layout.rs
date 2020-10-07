@@ -1,8 +1,8 @@
-use super::layout::{Alloc, Layout, LayoutMut};
+use super::layout::{Alloc, Layout, LayoutMut, DynamicFill};
 use super::slice_layout::SliceLayout;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct HeapLayout<T> {
     data: Vec<T>,
     shape: Vec<usize>,
@@ -13,7 +13,17 @@ impl<T> Alloc for HeapLayout<T>
 where
     T: Default + Clone,
 {
+    #[inline]
     fn alloc(shape: Vec<usize>) -> Self {
+        Self::fill(T::default(), shape)
+    }
+}
+
+impl<T> DynamicFill<T> for HeapLayout<T>
+where
+    T: Clone,
+{
+    fn fill(value: T, shape: Vec<usize>) -> Self {
         let mut num_elements = 1;
         let mut strides = shape.clone();
 
@@ -23,7 +33,7 @@ where
             *stride = tmp;
         }
         HeapLayout {
-            data: vec![T::default(); num_elements],
+            data: vec![value; num_elements],
             shape,
             strides,
         }

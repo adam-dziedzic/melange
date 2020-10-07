@@ -12,10 +12,10 @@ pub trait DynamicAllocationPolicy<T> {
     type Layout: Alloc + for<'a> LayoutMut<'a, T>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DefaultPolicy;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StackFirstPolicy;
 
 impl<T, S> StaticAllocationPolicy<T, S> for DefaultPolicy

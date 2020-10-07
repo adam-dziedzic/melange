@@ -388,7 +388,22 @@ mod tests {
         assert_eq!(b.strides(), vec![1, 3]);
         assert_eq!(b.opt_chunk_size(), 1);
     }
+
+    #[test]
+    fn backprop() {
+        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
+        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
+
+        let a = Variable::new(a, true);
+        let b = Variable::new(b, true);
+
+        let c = Variable::clone(&a) + b;
+        c.backward(&StaticTensor::fill(1.0));
+        
+        assert_eq!(a.grad().unwrap(), StaticTensor::fill(1.0));
+    }
 }
 
 pub mod prelude;
 pub mod tensor;
+pub mod backprop;

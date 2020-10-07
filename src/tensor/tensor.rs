@@ -1,4 +1,4 @@
-use super::layout::{Alloc, Layout};
+use super::layout::{Alloc, Layout, StaticFill, DynamicFill};
 use super::shape::{
     internal_strides_in_place, Broadcast, Same, SameNumElements, Shape, StaticShape, StridedShape,
     StridedShapeDyn, Transpose, TRUE,
@@ -8,7 +8,7 @@ use super::transpose_policy::{Contiguous, Strided, TransposePolicy};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tensor<T, S, C, L, P> {
     layout: L,
     _phantoms: PhantomData<(T, S, C, P)>,
@@ -298,6 +298,26 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
     {
         Tensor {
             layout: L::alloc(shape),
+            _phantoms: PhantomData,
+        }
+    }
+
+    pub fn fill(value: T) -> Self
+    where
+        L: StaticFill<T>,
+    {
+        Tensor {
+            layout: L::fill(value),
+            _phantoms: PhantomData,
+        }
+    }
+
+    pub fn fill_dynamic(value: T, shape: Vec<usize>) -> Self
+    where
+        L: DynamicFill<T>,
+    {
+        Tensor {
+            layout: L::fill(value, shape),
             _phantoms: PhantomData,
         }
     }

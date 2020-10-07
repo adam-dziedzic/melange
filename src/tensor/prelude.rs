@@ -5,6 +5,8 @@ use super::stack_layout::StackLayout;
 use super::static_heap_layout::StaticHeapLayout;
 use super::transpose_policy::{Contiguous, Strided, Transposed};
 
+pub use super::layout::*;
+pub use super::shape::*;
 pub use super::tensor::Tensor;
 
 pub type StaticTensor<T, S> = Tensor<T, S, Contiguous, StaticHeapLayout<T, S>, DefaultPolicy>;

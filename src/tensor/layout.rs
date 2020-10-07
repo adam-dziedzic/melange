@@ -33,3 +33,11 @@ where
 pub trait Alloc {
     fn alloc(shape: Vec<usize>) -> Self;
 }
+
+pub trait StaticFill<T> {
+    fn fill(value: T) -> Self;
+}
+
+pub trait DynamicFill<T> {
+    fn fill(value: T, shape: Vec<usize>) -> Self;
+}

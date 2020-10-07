@@ -540,3 +540,54 @@ where
         out
     }
 }
+
+#[expand_operations(
+    add_assign<T: Send + Sync + Copy + AddAssign> as add,
+    sub_assign<T: Send + Sync + Copy + SubAssign> as sub,
+    mul_assign<T: Send + Sync + Copy + MulAssign> as mul,
+    div_assign<T: Send + Sync + Copy + DivAssign> as div,
+    rem_assign<T: Send + Sync + Copy + RemAssign> as rem,
+)]
+impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+where
+    L: for<'a> LayoutMut<'a, T>,
+{
+    pub fn operation_<Crhs, Lrhs, Prhs>(&mut self, other: &Tensor<T, S, Crhs, Lrhs, Prhs>)
+    where
+        S: StaticShape,
+        P: StaticAllocationPolicy<T, S>,
+        Lrhs: for<'a> Layout<'a, T>,
+    {
+        let chunk_size = other.opt_chunk_size();
+
+        for (chunk_self, chunk_other) in self.chunks_mut(chunk_size).zip(other.chunks(chunk_size)) {
+            chunk_self
+                .par_iter_mut()
+                .zip(chunk_other.par_iter())
+                .for_each(|(x, y)| x.placeholder(*y));
+        }
+    }
+
+    pub fn operation_dynamic_<Crhs, Lrhs, Prhs>(&mut self, other: &Tensor<T, S, Crhs, Lrhs, Prhs>)
+    where
+        L: for<'a> Layout<'a, T>,
+        P: DynamicAllocationPolicy<T>,
+        Lrhs: for<'a> Layout<'a, T>,
+    {
+        assert_eq!(
+            self.shape(),
+            other.shape(),
+            "`self` and `other` must have the same shape. Got {:?} and {:?}.",
+            self.shape(),
+            other.shape()
+        );
+        let chunk_size = other.opt_chunk_size();
+
+        for (chunk_self, chunk_other) in self.chunks_mut(chunk_size).zip(other.chunks(chunk_size)) {
+            chunk_self
+                .par_iter_mut()
+                .zip(chunk_other.par_iter())
+                .for_each(|(x, y)| x.placeholder(*y));
+        }
+    }
+}

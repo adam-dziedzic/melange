@@ -1,10 +1,10 @@
-use super::layout::{Layout, LayoutMut};
+use super::layout::{Layout, LayoutMut, StaticFill};
 use super::shape::StaticShape;
 use super::slice_layout::SliceLayout;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StaticHeapLayout<T, S> {
     data: Vec<T>,
     _phantoms: PhantomData<S>,
@@ -18,6 +18,19 @@ where
     fn default() -> Self {
         StaticHeapLayout {
             data: vec![T::default(); S::NUM_ELEMENTS],
+            _phantoms: PhantomData,
+        }
+    }
+}
+
+impl<T, S> StaticFill<T> for StaticHeapLayout<T, S>
+where
+    T: Clone,
+    S: StaticShape,
+{
+    fn fill(value: T) -> Self {
+        StaticHeapLayout {
+            data: vec![value; S::NUM_ELEMENTS],
             _phantoms: PhantomData,
         }
     }

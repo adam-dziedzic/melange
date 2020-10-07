@@ -5,7 +5,7 @@ use std::ops::Deref;
 mod strided_chunks;
 use strided_chunks::StridedChunks;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SliceLayout<'a, T> {
     data: &'a [T],
     shape: Vec<usize>,

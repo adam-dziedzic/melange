@@ -1,10 +1,10 @@
 use super::layout::{Layout, LayoutMut};
 use super::shape::{NumElements, StaticShape};
 use super::slice_layout::SliceLayout;
-use generic_array::GenericArray;
+use generic_array::{GenericArray};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StackLayout<T, S>
 where
     S: NumElements<T>,
