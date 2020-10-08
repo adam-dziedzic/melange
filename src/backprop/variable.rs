@@ -4,24 +4,59 @@ use crate::tensor::transpose_policy::Contiguous;
 use std::cell::RefCell;
 use std::ops::{AddAssign, Deref};
 use std::rc::Rc;
+use std::fmt;
 
-pub struct BackpropNode<T, S, C, L, P, Lgrad>
+pub struct BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
 {
     pub(super) value: Tensor<T, S, C, L, P>,
     pub(super) grad: Option<Tensor<T, S, Contiguous, Lgrad, P>>,
-    pub(super) backward_closure: Box<dyn Fn(Variable<T, S, C, L, P, Lgrad>) -> ()>,
+    pub(super) backward_op_name: &'static str,
+    pub(super) backward_closure: Box<dyn Fn(&Tensor<T, S, Cback, Lback, Pback>) -> ()>,
 }
 
-pub struct Variable<T, S, C, L, P, Lgrad>(pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad>>>);
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+where
+    T: fmt::Debug,
+    S: fmt::Debug,
+    C: fmt::Debug,
+    L: fmt::Debug,
+    P: fmt::Debug,
+    Lgrad: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Variable")
+         .field("value", &self.value)
+         .field("grad", &self.grad)
+         .field("backward_op", &self.backward_op_name)
+         .finish()
+    }
+}
 
-impl<T, S, C, L, P, Lgrad> Deref for Variable<T, S, C, L, P, Lgrad> {
-    type Target = Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad>>>;
+pub struct Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>(pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>);
+
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+where
+    T: fmt::Debug,
+    S: fmt::Debug,
+    C: fmt::Debug,
+    L: fmt::Debug,
+    P: fmt::Debug,
+    Lgrad: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let node = self.borrow();
+        node.fmt(f)
+    }
+}
+
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Deref for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
+    type Target = Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<T, S, C, L, P, Lgrad> Variable<T, S, C, L, P, Lgrad>
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
 where
     Tensor<T, S, Contiguous, Lgrad, P>: Clone,
 {
@@ -30,13 +65,13 @@ where
     }
 }
 
-impl<T, S, C, L, P> Variable<T, S, C, L, P, P::Layout>
+impl<T, S, C, L, P, Cback, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Cback, Lback, Pback>
 where
     S: StaticShape,
     L: for<'a> Layout<'a, T>,
     P: StaticAllocationPolicy<T, S>,
 {
-    pub fn backward<Cback, Pback, Lback>(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
+    pub fn backward(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
         Lback: for<'a> Layout<'a, T>,
@@ -49,7 +84,7 @@ where
         }
 
         let node = self.borrow();
-        (node.backward_closure)(Self::clone(&self));
+        (node.backward_closure)(grad);
     }
 
     pub fn new(tensor: Tensor<T, S, C, L, P>, require_grad: bool) -> Self {
@@ -60,17 +95,18 @@ where
             } else {
                 None
             },
-            backward_closure: Box::new(|_var| ()),
+            backward_op_name: "no_op",
+            backward_closure: Box::new(|_grad| ()),
         })))
     }
 }
 
-impl<T, S, C, L, P> Variable<T, S, C, L, P, P::Layout>
+impl<T, S, C, L, P, Cback, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Cback, Lback, Pback>
 where
     L: for<'a> Layout<'a, T>,
     P: DynamicAllocationPolicy<T>,
 {
-    pub fn backward_dynamic<Cback, Lback, Pback>(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
+    pub fn backward_dynamic(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
         P: DynamicAllocationPolicy<T>,
@@ -96,7 +132,7 @@ where
         }
 
         let node = self.borrow();
-        (node.backward_closure)(Self::clone(&self));
+        (node.backward_closure)(grad);
     }
 }
 
@@ -111,7 +147,7 @@ where
 //     }
 // }
 
-impl<T, S, C, L, P, Lgrad> Clone for Variable<T, S, C, L, P, Lgrad> {
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Clone for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
     fn clone(&self) -> Self {
         Variable(Rc::clone(&self.0))
     }

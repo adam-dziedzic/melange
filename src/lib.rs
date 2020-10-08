@@ -395,7 +395,7 @@ mod tests {
         let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
 
         let a = Variable::new(a, true);
-        let b = Variable::new(b, true);
+        let b = Variable::new(b, false);
 
         let c = Variable::clone(&a) + b;
         c.backward(&StaticTensor::fill(1.0));
