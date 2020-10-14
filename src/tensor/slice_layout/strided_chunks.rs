@@ -11,13 +11,13 @@ pub struct StridedChunks<'a, 'b, T> {
 impl<'a, 'b, T> StridedChunks<'a, 'b, T> {
     pub fn new(layout: &'a SliceLayout<'b, T>, chunk_size: usize) -> Self {
         let mut step_sizes = layout.shape.clone();
-        let mut chunk_size = chunk_size;
+        let mut step = chunk_size;
 
         step_sizes.iter_mut().rev().for_each(|x| {
-            if chunk_size < *x {
+            if step < *x {
                 *x = 1
             } else {
-                chunk_size /= *x
+                step /= *x
             }
         });
 

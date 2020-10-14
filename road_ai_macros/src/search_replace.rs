@@ -2,7 +2,9 @@ use proc_macro2::Ident;
 use std::iter::FromIterator;
 use syn::punctuated::Punctuated;
 use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprCall, ExprMethodCall, ExprPath, GenericParam, Generics, PatType, Type};
+use syn::{
+    Expr, ExprCall, ExprClosure, ExprMethodCall, ExprPath, GenericParam, Generics, PatType, Type,
+};
 
 pub struct FindReplaceExprMethodCall {
     pub find: Ident,
@@ -21,6 +23,10 @@ pub struct RemoveGenerics {
 pub struct FindReplacePatType {
     pub find: Ident,
     pub replace: Type,
+}
+
+pub struct ReplaceExprClosure {
+    pub replace: ExprClosure,
 }
 
 impl VisitMut for FindReplaceExprMethodCall {
@@ -85,5 +91,13 @@ impl VisitMut for FindReplacePatType {
         }
 
         visit_mut::visit_pat_type_mut(self, node);
+    }
+}
+
+impl VisitMut for ReplaceExprClosure {
+    fn visit_expr_closure_mut(&mut self, node: &mut ExprClosure) {
+        *node = self.replace.clone();
+
+        visit_mut::visit_expr_closure_mut(self, node);
     }
 }

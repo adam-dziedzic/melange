@@ -2,7 +2,7 @@ use proc_macro2::Ident;
 use std::ops::Deref;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::token::{As, Colon, Comma, Eq, Gt, Lt, Paren};
+use syn::token::{As, Colon, Comma, Eq, Gt, In, Lt, Paren};
 use syn::{Error, Result, Type, WherePredicate};
 
 pub struct EqPredicate {
@@ -47,6 +47,8 @@ pub struct Operation {
     pub types: Option<Punctuated<Type, Comma>>,
     pub as_token: Option<As>,
     pub alias: Option<Ident>,
+    pub in_token: Option<In>,
+    pub trait_impl: Option<Ident>,
 }
 
 impl Parse for Operation {
@@ -80,6 +82,16 @@ impl Parse for Operation {
             }
             Err(_) => (None, None),
         };
+
+        let (in_token, trait_impl) = match input.parse() {
+            Ok(token) => {
+                let in_token = Some(token);
+                let trait_impl = Some(input.parse()?);
+
+                (in_token, trait_impl)
+            }
+            Err(_) => (None, None),
+        };
         Ok(Operation {
             ident,
             lt_token,
@@ -89,6 +101,8 @@ impl Parse for Operation {
             types,
             as_token,
             alias,
+            in_token,
+            trait_impl,
         })
     }
 }

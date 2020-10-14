@@ -6,15 +6,15 @@ use std::ops::{AddAssign, Deref};
 use std::rc::Rc;
 use std::fmt;
 
-pub struct BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+pub struct BackpropNode<T, S, C, L, P, Lgrad, Lback, Pback>
 {
     pub(super) value: Tensor<T, S, C, L, P>,
     pub(super) grad: Option<Tensor<T, S, Contiguous, Lgrad, P>>,
     pub(super) backward_op_name: &'static str,
-    pub(super) backward_closure: Box<dyn Fn(&Tensor<T, S, Cback, Lback, Pback>) -> ()>,
+    pub(super) backward_closure: Box<dyn Fn(&mut Tensor<T, S, Contiguous, Lback, Pback>) -> ()>,
 }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lgrad, Lback, Pback> fmt::Debug for BackpropNode<T, S, C, L, P, Lgrad, Lback, Pback>
 where
     T: fmt::Debug,
     S: fmt::Debug,
@@ -32,9 +32,9 @@ where
     }
 }
 
-pub struct Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>(pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>);
+pub struct Variable<T, S, C, L, P, Lgrad, Lback, Pback>(pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Lback, Pback>>>);
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lgrad, Lback, Pback> fmt::Debug for Variable<T, S, C, L, P, Lgrad, Lback, Pback>
 where
     T: fmt::Debug,
     S: fmt::Debug,
@@ -49,14 +49,14 @@ where
     }
 }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Deref for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
-    type Target = Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>;
+impl<T, S, C, L, P, Lgrad, Lback, Pback> Deref for Variable<T, S, C, L, P, Lgrad, Lback, Pback> {
+    type Target = Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Lback, Pback>>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lgrad, Lback, Pback> Variable<T, S, C, L, P, Lgrad, Lback, Pback>
 where
     Tensor<T, S, Contiguous, Lgrad, P>: Clone,
 {
@@ -65,13 +65,13 @@ where
     }
 }
 
-impl<T, S, C, L, P, Cback, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Lback, Pback>
 where
     S: StaticShape,
     L: for<'a> Layout<'a, T>,
     P: StaticAllocationPolicy<T, S>,
 {
-    pub fn backward(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
+    pub fn backward(&self, grad: &mut Tensor<T, S, Contiguous, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
         Lback: for<'a> Layout<'a, T>,
@@ -101,12 +101,12 @@ where
     }
 }
 
-impl<T, S, C, L, P, Cback, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Lback, Pback>
 where
     L: for<'a> Layout<'a, T>,
     P: DynamicAllocationPolicy<T>,
 {
-    pub fn backward_dynamic(&self, grad: &Tensor<T, S, Cback, Lback, Pback>)
+    pub fn backward_dynamic(&self, grad: &mut Tensor<T, S, Contiguous, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
         P: DynamicAllocationPolicy<T>,
@@ -147,7 +147,7 @@ where
 //     }
 // }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Clone for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
+impl<T, S, C, L, P, Lgrad, Lback, Pback> Clone for Variable<T, S, C, L, P, Lgrad, Lback, Pback> {
     fn clone(&self) -> Self {
         Variable(Rc::clone(&self.0))
     }

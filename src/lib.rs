@@ -119,6 +119,16 @@ mod tests {
     }
 
     #[test]
+    fn mul() {
+        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 3, 0, 0, 0, 1]);
+        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[3, 1, 1, 1, 1, 1, 1, 1, 1]);
+        let c = a.mul(&b);
+
+        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[3, 0, 0, 0, 3, 0, 0, 0, 1]);
+        assert_eq!(c.as_view(), d);
+    }
+
+    #[test]
     fn add_static_ok() {
         let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> =
             Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
@@ -367,14 +377,16 @@ mod tests {
     #[test]
     fn rotation_dot() {
         use std::f64::consts::FRAC_PI_4;
+        use std::f64::EPSILON;
         let a_data = [FRAC_PI_4.cos(), -FRAC_PI_4.sin(), 0.0, FRAC_PI_4.sin(), FRAC_PI_4.cos(), 0.0, 0.0, 0.0, 1.0];
         let d_data = [FRAC_PI_4.cos(), FRAC_PI_4.cos(), 3.0];
         let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&a_data);
         let b: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&[1.0, 0.0, 3.0]);
         let c = a.dot(&b);
-
-        let d: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&d_data);
-        assert_eq!(c.as_view(), d);
+        
+        let t: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&d_data);
+        let d = c.sub(&t).sum::<U0>().chunks(1).nth(0).unwrap()[0];
+        assert!(d < EPSILON);
     }
 
     #[test]
@@ -398,9 +410,26 @@ mod tests {
         let b = Variable::new(b, false);
 
         let c = Variable::clone(&a) + b;
-        c.backward(&StaticTensor::fill(1.0));
+        c.backward(&mut StaticTensor::fill(1.0));
         
         assert_eq!(a.grad().unwrap(), StaticTensor::fill(1.0));
+    }
+
+    #[test]
+    fn backprop2() {
+        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0]);
+        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[2.0, 1.0, 0.0, 2.0]);
+        let c: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 1.0]);
+
+        let a = Variable::new(a, true);
+        let b = Variable::new(b, false);
+        let c = Variable::new(c, false);
+
+        let a_times_b = Variable::clone(&a) * b;
+        let result = a_times_b + c;
+        result.backward(&mut StaticTensor::fill(1.0));
+        
+        assert_eq!(a.grad().unwrap().as_view(), Tensor::from_slice(&[2.0, 1.0, 0.0, 2.0]));
     }
 }
 

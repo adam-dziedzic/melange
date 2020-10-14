@@ -11,6 +11,9 @@ use syn::{parse_macro_input, ImplItem, ItemImpl, WhereClause};
 mod operation_syntax;
 use operation_syntax::*;
 
+mod closure_definition_syntax;
+use closure_definition_syntax::*;
+
 mod search_replace;
 use search_replace::*;
 
@@ -30,6 +33,15 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
         };
         let mut impl_block = item.clone();
 
+        // Turn impl to trait impl if needed
+        if let Some(trait_impl) = &operation.trait_impl {
+            if let Some(trait_) = &mut impl_block.trait_ {
+                if let Some(trait_path) = trait_.1.segments.last_mut() {
+                    trait_path.ident = trait_impl.clone();
+                }
+            }
+        }
+
         // Visitor that replaces calls to `placeholer` by the operation's name.
         let mut placeholder_method_visitor = FindReplaceExprMethodCall {
             find: Ident::new("placeholder", Span::call_site()),
@@ -40,6 +52,10 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
         let mut unchecked_method_visitor = FindReplaceExprMethodCall {
             find: Ident::new("unchecked", Span::call_site()),
             replace: Ident::new(&format!("{}_unchecked", name), Span::call_site()),
+        };
+        let mut unchecked_underscore_method_visitor = FindReplaceExprMethodCall {
+            find: Ident::new("unchecked_", Span::call_site()),
+            replace: Ident::new(&format!("{}_unchecked_", name), Span::call_site()),
         };
 
         // Add trait bound if specified by the operation.
@@ -125,6 +141,7 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
 
                 placeholder_method_visitor.visit_block_mut(&mut method.block);
                 unchecked_method_visitor.visit_block_mut(&mut method.block);
+                unchecked_underscore_method_visitor.visit_block_mut(&mut method.block);
             }
         }
 
@@ -133,6 +150,30 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let result = quote! {
         #(#impl_blocks)*
+    };
+    result.into()
+}
+
+#[proc_macro_attribute]
+pub fn define_closure(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = parse_macro_input!(attr as ClosureDefinition);
+    let mut item = parse_macro_input!(item as ItemImpl);
+
+    for impl_item in item.items.iter_mut() {
+        if let ImplItem::Method(method) = impl_item {
+            if attr.fn_name == method.sig.ident {
+                let mut visitor = ReplaceExprClosure {
+                    replace: attr.closure,
+                };
+
+                visitor.visit_block_mut(&mut method.block);
+                break;
+            }
+        }
+    }
+
+    let result = quote! {
+        #item
     };
     result.into()
 }
