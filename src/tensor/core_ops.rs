@@ -6,6 +6,7 @@ use super::transpose_policy::Contiguous;
 use rayon::prelude::*;
 use road_ai_macros::expand_operations;
 use std::ops::*;
+use crate::ring::Ring;
 
 #[expand_operations(
     add<T: Send + Sync + Copy + Add<Output=T>>,
@@ -295,6 +296,7 @@ where
     abs<T=i8>,
     signum<T=i8>,
     clone<T: Send + Sync + Copy>,
+    inv<T: Send + Sync + Copy + Ring + Div<Output = T>>,
 )]
 impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
@@ -792,6 +794,7 @@ where
     abs<T=i8>,
     signum<T=i8>,
     clone<T: Send + Sync + Copy>,
+    inv<T: Send + Sync + Copy + Ring + Div<Output = T>>,
 )]
 impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
 where

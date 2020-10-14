@@ -436,3 +436,4 @@ mod tests {
 pub mod prelude;
 pub mod tensor;
 pub mod backprop;
+pub mod ring;

@@ -1,4 +1,4 @@
-use super::ring::Ring;
+use crate::ring::Ring;
 use super::variable::{BackpropNode, Variable};
 use crate::tensor::allocation_policy::StaticAllocationPolicy;
 use crate::tensor::prelude::*;
@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 #[expand_operations(
     add<T: Send + Sync + Copy + AddAssign + Add<Output = T> + 'static> in Add,
-    sub<T: Send + Sync + Copy + AddAssign + Sub<Output = T> + Ring<T> + Neg<Output = T> + Mul<Output = T> + 'static> in Sub,
+    sub<T: Send + Sync + Copy + AddAssign + Sub<Output = T> + Ring + Neg<Output = T> + Mul<Output = T> + 'static> in Sub,
     mul<T: Send + Sync + Copy + AddAssign + MulAssign + Mul<Output = T> + 'static> in Mul,
     div<T: Send + Sync + Copy + AddAssign + DivAssign + Div<Output = T> + Mul<Output = T> + 'static> in Div,
 )]
@@ -107,7 +107,7 @@ where
     scal_add<T: Send + Sync + Copy + AddAssign + Add<Output = T> + 'static> as add in Add,
     scal_sub<T: Send + Sync + Copy + AddAssign + Sub<Output = T> + 'static> as sub in Sub,
     scal_mul<T: Send + Sync + Copy + AddAssign + Mul<Output = T> + 'static> as mul in Mul,
-    scal_div<T: Send + Sync + Copy + AddAssign + Div<Output = T> + Mul<Output = T> + Ring<T> + 'static> as div in Div,
+    scal_div<T: Send + Sync + Copy + AddAssign + Div<Output = T> + Mul<Output = T> + Ring + 'static> as div in Div,
 )]
 #[define_closure(
     add: move |grad| {
@@ -166,65 +166,144 @@ where
     }
 }
 
-// #[define_closure(
-//     powf: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             self_ref.value.powf(param - 1.0).scal_mul(param)
-//         }; 
+#[expand_operations(
+    powf<T=f64>(f64),
+    powi<T=f64>(i32),
+    powf<T=f32>(f32),
+    // powi<T=f32>(i32), -> no easy conversion from i32 into f32
+)]
+#[define_closure(
+    powf: move |grad| {
+        let self_grad = {
+            let self_ref = self.borrow();
+            self_ref.value.powf(param - 1.0).scal_mul(param)
+        }; 
         
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
-// #[define_closure(
-//     powi: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             self_ref.value.powi(param - 1).scal_mul(param.into())
-//         }; 
+        grad.mul_(&self_grad);
+        self.backward(grad);
+    }
+)]
+#[define_closure(
+    powi: move |grad| {
+        let self_grad = {
+            let self_ref = self.borrow();
+            self_ref.value.powi(param - 1).scal_mul(param.into())
+        }; 
         
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
+        grad.mul_(&self_grad);
+        self.backward(grad);
+    }
+)]
+impl<T, S, C, L, P, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Lback, Pback>
+where
+    S: StaticShape + 'static,
+    C: 'static,
+    L: for<'a> Layout<'a, T> + 'static,
+    P: StaticAllocationPolicy<T, S> + 'static,
+    P::Layout: for<'a> Layout<'a, T> + 'static,
+    Pback: StaticAllocationPolicy<T, S> + 'static,
+    Pback::Layout: for<'a> Layout<'a, T> + 'static,
+    Lback: for<'a> Layout<'a, T> + for<'a> LayoutMut<'a, T> + 'static,
+{
+    fn operation(self, param: type0) -> Variable<T, S, Contiguous, P::Layout, P, P::Layout, Lback, Pback> {
+        let (value, grad) = {
+            let self_ref = &self.borrow();
+            (
+                self_ref.value.placeholder(param),
+                if let Some(_) = self_ref.grad {
+                    Some(Tensor::default())
+                } else {
+                    None
+                },
+            )
+        };
 
-// #[define_closure(
-//     exp: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             self_ref.value
-//         }; 
-        
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
-// #[define_closure(
-//     exp2: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             self_ref.value.scal_mul(std::f64::consts::LN_2.into())
-//         }; 
-        
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
-// #[define_closure(
-//     exp_m1: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             self_ref.value
-//         };
-        
+        Variable(Rc::new(RefCell::new(BackpropNode {
+            value,
+            grad,
+            backward_op_name: "add_back",
+            backward_closure: Box::new(|| ()),
+        })))
+    }
+}
 
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
-// #[define_closure(
-//     ln: move |grad| {
-//         let self_grad = {
-//             let self_ref = self.borrow();
-//             1.0 / 
-//         };
+#[expand_operations(
+    exp<T=f64>,
+    exp2<T=f64>,
+    exp_m1<T=f64>,
+    ln<T=f64>,
+)]
+#[define_closure(
+    exp: move |grad| {
+        {
+            let self_ref = self.borrow();
+            grad.mul_(&self_ref.value);
+        } 
         
-//         self.backward(&grad.mul(&self_grad));
-//     }
-// )]
+        self.backward(grad);
+    }
+)]
+#[define_closure(
+    exp2: move |grad| {
+        let self_grad = {
+            let self_ref = self.borrow();
+            self_ref.value.scal_mul(std::f64::consts::LN_2.into())
+        }; 
+        
+        grad.mul_(&self_grad);
+        self.backward(grad);
+    }
+)]
+#[define_closure(
+    exp_m1: move |grad| {
+        {
+            let self_ref = self.borrow();
+            grad.mul_(&self_ref.value);
+        }
+        
+        self.backward(grad);
+    }
+)]
+#[define_closure(
+    ln: move |grad| {
+        let self_grad = {
+            let self_ref = self.borrow();
+            self_ref.value.inv()
+        };
+        
+        grad.mul_(&self_grad);
+        self.backward(grad);
+    }
+)]
+impl<T, S, C, L, P, Lback, Pback> Variable<T, S, C, L, P, P::Layout, Lback, Pback>
+where
+    S: StaticShape + 'static,
+    C: 'static,
+    L: for<'a> Layout<'a, T> + 'static,
+    P: StaticAllocationPolicy<T, S> + 'static,
+    P::Layout: for<'a> Layout<'a, T> + 'static,
+    Pback: StaticAllocationPolicy<T, S> + 'static,
+    Pback::Layout: for<'a> Layout<'a, T> + 'static,
+    Lback: for<'a> Layout<'a, T> + for<'a> LayoutMut<'a, T> + 'static,
+{
+    fn operation(self) -> Variable<T, S, Contiguous, P::Layout, P, P::Layout, Lback, Pback> {
+        let (value, grad) = {
+            let self_ref = &self.borrow();
+            (
+                self_ref.value.placeholder(),
+                if let Some(_) = self_ref.grad {
+                    Some(Tensor::default())
+                } else {
+                    None
+                },
+            )
+        };
+
+        Variable(Rc::new(RefCell::new(BackpropNode {
+            value,
+            grad,
+            backward_op_name: "add_back",
+            backward_closure: Box::new(|| ()),
+        })))
+    }
+}

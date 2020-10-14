@@ -1,15 +1,23 @@
 use road_ai_macros::expand_operations;
+use std::ops::*;
 
-pub trait Ring<T> {
-    const ZERO: T;
-    const ONE: T;
+pub trait Ring {
+    const ZERO: Self;
+    const ONE: Self;
+
+    fn inv(self) -> Self
+    where
+        Self: Sized + Div<Output = Self>,
+    {
+        Self::ONE / self
+    }
 }
 
 #[expand_operations(
     _f64<T=f64>,
     _f32<T=f32>,
 )]
-impl<T> Ring<T> for T {
+impl<T> Ring for T {
     const ZERO: T = 0.0;
     const ONE: T = 1.0;
 }
@@ -26,7 +34,7 @@ impl<T> Ring<T> for T {
     _i16<T=i16>,
     _i8<T=i8>,
 )]
-impl<T> Ring<T> for T {
+impl<T> Ring for T {
     const ZERO: T = 0;
     const ONE: T = 1;
 }
