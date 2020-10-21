@@ -16,6 +16,11 @@ pub struct FindReplaceType {
     pub replace: Type,
 }
 
+pub struct FindReplaceIdent {
+    pub find: Ident,
+    pub replace: Ident,
+}
+
 pub struct RemoveGenerics {
     pub find: Ident,
 }
@@ -60,6 +65,16 @@ impl VisitMut for FindReplaceType {
         }
 
         visit_mut::visit_type_mut(self, node);
+    }
+}
+
+impl VisitMut for FindReplaceIdent {
+    fn visit_ident_mut(&mut self, node: &mut Ident) {
+        if node == &self.find {
+            *node = self.replace.clone();
+        }
+
+        visit_mut::visit_ident_mut(self, node);
     }
 }
 

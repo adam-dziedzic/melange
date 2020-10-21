@@ -28,7 +28,8 @@ impl<'a, T, S> Layout<'a, T> for StackLayout<T, S>
 where
     S: StaticShape + NumElements<T>,
     <S as NumElements<T>>::Output: 'static,
-    T: 'a,
+    // T: 'a,
+    T: 'static,
 {
     type Iter = std::slice::Chunks<'a, T>;
     type View = SliceLayout<'a, T>;

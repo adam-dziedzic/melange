@@ -6,7 +6,7 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::token::Where;
 use syn::visit_mut::VisitMut;
-use syn::{parse_macro_input, ImplItem, ItemImpl, WhereClause};
+use syn::{parse_macro_input, ImplItem, ItemImpl, Result, WhereClause};
 
 mod operation_syntax;
 use operation_syntax::*;
@@ -88,29 +88,27 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
                     generics_visitor.visit_item_impl_mut(&mut impl_block);
                     type_visitor.visit_item_impl_mut(&mut impl_block);
 
-                    // for impl_item in impl_block.items.iter_mut() {
-                    //     if let ImplItem::Method(method) = impl_item {
-                    //         for attribute in method.attrs.iter_mut() {
-                    //             let parsed_attribute: Result<Alias> = attribute.parse_args();
-                    //             match parsed_attribute {
-                    //                 Ok(alias) => {
-                    //                     let mut alias_name = alias.name;
-                    //                     let mut alias_ty = alias.ty;
-                    //                     let mut name_str = format!("{}", alias_name);
-                    //                     if let Some(position) = name_str.find("operation") {
-                    //                         name_str.replace_range(position..position+9, &format!("{}", name));
-                    //                         alias_name = Ident::new(&name_str, Span::call_site());
-                    //                     };
+                    for attribute in impl_block.attrs.iter_mut() {
+                        let parsed_attribute: Result<ClosureDefinition> = attribute.parse_args();
+                        match parsed_attribute {
+                            Ok(def) => {
+                                let fn_name = def.fn_name;
+                                let mut closure = def.closure;
+                                let rhs_ty = &margin.rhs_ty;
+                                let mut visitor = FindReplaceIdent {
+                                    find: margin.lhs_ty.clone(),
+                                    replace: Ident::new(
+                                        &format!("{}", quote! { #rhs_ty }),
+                                        Span::call_site(),
+                                    ),
+                                };
+                                visitor.visit_expr_closure_mut(&mut closure);
 
-                    //                     type_visitor.visit_type_mut(&mut alias_ty);
-
-                    //                     attribute.tokens = quote! { (#alias_ty as #alias_name) };
-                    //                 },
-                    //                 Err(_) => {},
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                                attribute.tokens = quote! { (#fn_name:#closure) };
+                            }
+                            Err(_) => {}
+                        }
+                    }
                 }
             }
         }

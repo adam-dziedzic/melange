@@ -410,7 +410,7 @@ mod tests {
         let b = Variable::new(b, false);
 
         let c = Variable::clone(&a) + b;
-        c.backward(&mut StaticTensor::fill(1.0));
+        c.backward(StaticTensor::fill(1.0));
         
         assert_eq!(a.grad().unwrap(), StaticTensor::fill(1.0));
     }
@@ -427,7 +427,7 @@ mod tests {
 
         let a_times_b = Variable::clone(&a) * b;
         let result = a_times_b + c;
-        result.backward(&mut StaticTensor::fill(1.0));
+        result.backward(StaticTensor::fill(1.0));
         
         assert_eq!(a.grad().unwrap().as_view(), Tensor::from_slice(&[2.0, 1.0, 0.0, 2.0]));
     }

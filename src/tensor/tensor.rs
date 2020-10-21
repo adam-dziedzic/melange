@@ -80,12 +80,12 @@ impl<'a, T, S, C, P> Tensor<T, S, C, SliceLayout<'a, T>, P> {
 }
 
 impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
-    pub fn broadcast<'a, Z>(&'a self) -> Tensor<T, Z, Strided, L::View, P>
+    pub fn broadcast<Z>(&self) -> Tensor<T, Z, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape + Broadcast<Z>,
         Z: StaticShape,
         <S as Broadcast<Z>>::Output: TRUE,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         let shape = Z::to_vec();
         let internal_strides = S::strides();
@@ -122,14 +122,14 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn broadcast_dynamic<'a, Z>(
-        &'a self,
+    pub fn broadcast_dynamic<Z>(
+        &self,
         shape: Vec<usize>,
-    ) -> Tensor<T, Z, Strided, L::View, P>
+    ) -> Tensor<T, Z, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: Broadcast<Z>,
         <S as Broadcast<Z>>::Output: TRUE,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         let current_shape = self.shape();
         assert!(
@@ -178,11 +178,11 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn stride<'a, Z>(&'a self) -> Tensor<T, <S as StridedShape<Z>>::Output, Strided, L::View, P>
+    pub fn stride<Z>(&self) -> Tensor<T, <S as StridedShape<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape + StridedShape<Z>,
         Z: StaticShape,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         let mut strides = self.strides();
         strides
@@ -207,13 +207,13 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn stride_dynamic<'a, Z>(
-        &'a self,
+    pub fn stride_dynamic<Z>(
+        &self,
         strides: Vec<usize>,
-    ) -> Tensor<T, <S as StridedShapeDyn<Z>>::Output, Strided, L::View, P>
+    ) -> Tensor<T, <S as StridedShapeDyn<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StridedShapeDyn<Z>,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         let external_strides = strides;
         let mut strides = self.strides();
@@ -241,11 +241,11 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn transpose<'a>(&'a self) -> Tensor<T, <S as Transpose>::Output, C::Transposed, L::View, P>
+    pub fn transpose(&self) -> Tensor<T, <S as Transpose>::Output, C::Transposed, <L as Layout<'_, T>>::View, P>
     where
         S: Transpose,
         C: TransposePolicy,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         Tensor {
             layout: self.as_view_unchecked(
@@ -258,12 +258,12 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn as_static<'a, Z>(&'a self) -> Tensor<T, Z, C, L::View, P>
+    pub fn as_static<Z>(&self) -> Tensor<T, Z, C, <L as Layout<'_, T>>::View, P>
     where
         Z: StaticShape,
         S: Same<Z>,
         <S as Same<Z>>::Output: TRUE,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         Tensor {
             layout: self.as_view_unchecked(
@@ -276,10 +276,10 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn as_view<'a>(&'a self) -> Tensor<T, S, C, L::View, P>
+    pub fn as_view(&self) -> Tensor<T, S, C, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         Tensor {
             layout: self.as_view_unchecked(
@@ -324,12 +324,12 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
 }
 
 impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
-    pub fn reshape<'a, Z>(&'a self) -> Tensor<T, Z, Contiguous, L::View, P>
+    pub fn reshape<Z>(&self) -> Tensor<T, Z, Contiguous, <L as Layout<'_, T>>::View, P>
     where
         Z: StaticShape,
         S: SameNumElements<T, Z>,
         <S as SameNumElements<T, Z>>::Output: TRUE,
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         Tensor {
             layout: self.as_view_unchecked(
@@ -342,12 +342,12 @@ impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
         }
     }
 
-    pub fn reshape_dynamic<'a, Z>(
-        &'a self,
+    pub fn reshape_dynamic<Z>(
+        &self,
         shape: Vec<usize>,
-    ) -> Tensor<T, Z, Contiguous, L::View, P>
+    ) -> Tensor<T, Z, Contiguous, <L as Layout<'_, T>>::View, P>
     where
-        L: Layout<'a, T>,
+        L: for<'a> Layout<'a, T>,
     {
         let num_elements = shape.iter().product();
         let current_shape = self.shape();

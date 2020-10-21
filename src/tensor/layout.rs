@@ -5,7 +5,7 @@ where
     T: 'a,
 {
     type Iter: Iterator<Item = &'a [T]>;
-    type View: Layout<'a, T>;
+    type View: for<'b> Layout<'b, T>;
 
     fn shape(&self) -> Vec<usize>;
     fn strides(&self) -> Vec<usize>;

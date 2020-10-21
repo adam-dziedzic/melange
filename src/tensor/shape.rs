@@ -384,7 +384,7 @@ impl<T, Else> If<T, Else> for B0 {
     type Output = Else;
 }
 
-pub trait Reduction<A> {
+pub trait Reduction<Ax> {
     type Output;
 }
 

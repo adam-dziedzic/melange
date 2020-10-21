@@ -46,7 +46,8 @@ impl<'a, T> SliceLayout<'a, T> {
 
 impl<'a, 'b, T> Layout<'b, T> for SliceLayout<'a, T>
 where
-    T: 'b,
+    // T: 'b,
+    T: 'static,
 {
     type Iter = StridedChunks<'b, 'b, T>;
     type View = Self;
@@ -95,7 +96,7 @@ impl<'a, T> Deref for SliceLayout<'a, T> {
 
 impl<'a, T> PartialEq for SliceLayout<'a, T>
 where
-    T: Send + Sync + PartialEq,
+    T: Send + Sync + PartialEq + 'static,
 {
     fn eq(&self, other: &Self) -> bool {
         let chunk_size = self.opt_chunk_size.min(other.opt_chunk_size);

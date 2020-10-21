@@ -42,7 +42,8 @@ where
 
 impl<'a, T> Layout<'a, T> for HeapLayout<T>
 where
-    T: 'a,
+    // T: 'a,
+    T: 'static,
 {
     type Iter = std::slice::Chunks<'a, T>;
     type View = SliceLayout<'a, T>;

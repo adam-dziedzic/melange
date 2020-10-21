@@ -295,7 +295,7 @@ where
     signum<T=i16>,
     abs<T=i8>,
     signum<T=i8>,
-    clone<T: Send + Sync + Copy>,
+    clone<T: Send + Sync + Copy> as as_contiguous,
     inv<T: Send + Sync + Copy + Ring + Div<Output = T>>,
 )]
 impl<T, S, C, L, P> Tensor<T, S, C, L, P>
@@ -551,7 +551,7 @@ where
     div_assign<T: Send + Sync + Copy + DivAssign> as div,
     rem_assign<T: Send + Sync + Copy + RemAssign> as rem,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> LayoutMut<'a, T>,
 {
@@ -628,7 +628,7 @@ where
     div_euclid<T=i8>,
     rem_euclid<T=i8>,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> LayoutMut<'a, T>,
 {
@@ -709,7 +709,7 @@ where
     div_euclid<T=i8>(i8) as scal_div_euclid,
     rem_euclid<T=i8>(i8) as scal_rem_euclid,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> Layout<'a, T> + for<'a> LayoutMut<'a, T>,
 {
@@ -793,10 +793,9 @@ where
     signum<T=i16>,
     abs<T=i8>,
     signum<T=i8>,
-    clone<T: Send + Sync + Copy>,
     inv<T: Send + Sync + Copy + Ring + Div<Output = T>>,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> Layout<'a, T> + for<'a> LayoutMut<'a, T>,
 {
@@ -815,7 +814,7 @@ where
     mul_add<T=f64>(f64, f64) as scal_mul_add,
     mul_add<T=f32>(f32, f32) as scal_mul_add,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> Layout<'a, T> + for<'a> LayoutMut<'a, T>,
 {
@@ -834,7 +833,7 @@ where
     mul_add<T=f64>,
     mul_add<T=f32>,
 )]
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P>
+impl<T, S, C, L, P> Tensor<T, S, C, L, P>
 where
     L: for<'a> LayoutMut<'a, T>,
 {
