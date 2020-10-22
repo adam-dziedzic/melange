@@ -1,5 +1,6 @@
 use super::SliceLayout;
 
+/// Overlapping iterator over a `SliceLayout` that outputs `&[T]` chunks.
 pub struct StridedChunks<'a, 'b, T> {
     counter: Vec<usize>,
     step_sizes: Vec<usize>,
@@ -13,13 +14,10 @@ impl<'a, 'b, T> StridedChunks<'a, 'b, T> {
         let mut step_sizes = layout.shape.clone();
         let mut step = chunk_size;
 
-        step_sizes.iter_mut().rev().for_each(|x| {
-            if step < *x {
-                *x = 1
-            } else {
-                step /= *x
-            }
-        });
+        step_sizes
+            .iter_mut()
+            .rev()
+            .for_each(|x| if step < *x { *x = 1 } else { step /= *x });
 
         StridedChunks {
             counter: vec![0; layout.shape.len()],

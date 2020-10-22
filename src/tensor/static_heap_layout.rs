@@ -4,6 +4,12 @@ use super::slice_layout::SliceLayout;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
+/// `Vec`-backed contiguous layout that does require a shape known
+/// at compile time. This comes with no memory overhead since both
+/// the shape and strides are encoded in the type and checked at compile time.
+///
+/// `StaticHeapLayout` is the default static storage in Melange and should
+/// be prefered unless you have specific needs.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StaticHeapLayout<T, S> {
     data: Vec<T>,

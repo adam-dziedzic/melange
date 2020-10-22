@@ -1,7 +1,14 @@
-use super::layout::{Alloc, Layout, LayoutMut, DynamicFill};
+use super::layout::{Alloc, DynamicFill, Layout, LayoutMut};
 use super::slice_layout::SliceLayout;
 use std::ops::{Deref, DerefMut};
 
+/// `Vec`-backed contiguous layout that does not require a shape known
+/// at compile time. This comes with some memory overhead to store both
+/// the shape and intrinsic strides (i.e. cumulative products of the
+/// dimensions).
+///
+/// `HeapLayout` is the default dynamic storage in Melange and should
+/// be prefered unless you have specific needs.
 #[derive(Debug, PartialEq, Clone)]
 pub struct HeapLayout<T> {
     data: Vec<T>,

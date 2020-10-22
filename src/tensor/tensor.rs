@@ -1,6 +1,6 @@
-use super::layout::{Alloc, Layout, StaticFill, DynamicFill};
+use super::layout::{Alloc, DynamicFill, Layout, StaticFill};
 use super::shape::{
-    internal_strides_in_place, Broadcast, Same, SameNumElements, Shape, StaticShape, StridedShape,
+    intrinsic_strides_in_place, Broadcast, Same, SameNumElements, Shape, StaticShape, StridedShape,
     StridedShapeDyn, Transpose, TRUE,
 };
 use super::slice_layout::SliceLayout;
@@ -8,6 +8,42 @@ use super::transpose_policy::{Contiguous, Strided, TransposePolicy};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
+/// The central struct of the `tensor` module.
+///
+/// `Tensor` is highly generic structure that provides a unique interface
+/// for all combinations of shapes, layouts and policies.
+/// It is parametrized by the following generics:
+/// * T the data scalar type,
+/// * S the type-level shape for compile time checks,
+/// * C the transpose policy
+/// * L the layout
+/// * P the allocation policy
+///
+/// The behavior of the tensor is fully determined by those type
+/// parameters. Although the roles of T and S are easy to understand,
+/// the other parameters might seem more obscure.
+///
+/// C is primarily used with BLAS-backed operation that require
+/// the data to be layed out in a contiguous manner and in a specific order.
+/// Two flag are available in the contiguous case: `Contiguous` and `Transposed`.
+/// `Contiguous` is the default case, `Transposed` is used as a flag for tensors
+/// whose axes has been inverted. Although axes inversion is sufficient for most
+/// Melange operations to work, it is not the case with BLAS.
+/// The `Strided` flag is used for tensors that are not contiguous and shouldn't
+/// be passed to BLAS operations (which is enforced at compile time).
+///
+/// L represents the Layout that internally stores the tensor's data, there are various
+/// Layout with various properties but the default are a good choice for most cases:
+/// * `StaticHeapLayout` with static shapes,
+/// * `HeapLayout` with dynamic shapes,
+/// * `SliceLayout` for views.
+///
+/// P is the policy that is used when a new tensor needs to be allocated
+/// such as the resul of an operation on borrowed tensors. Note that by convention,
+/// operations use and pass `self`'s policy. `DefaultPolicy` allocates with the defaults
+/// suggested in the previous paragraph.
+///
+/// For ease of use, aliases for common cases are defined in the `prelude` of the `tensor` module.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tensor<T, S, C, L, P> {
     layout: L,
@@ -142,14 +178,14 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
             current_shape,
             shape,
         );
-        let internal_strides = internal_strides_in_place(current_shape);
+        let internal_strides = intrinsic_strides_in_place(current_shape);
         let mut external_strides = self.strides();
         external_strides
             .iter_mut()
             .zip(internal_strides.iter())
             .zip(self.shape())
             .for_each(|((x, y), z)| *x = if z == 1 { 0 } else { *x / *y });
-        let mut strides = internal_strides_in_place(shape.clone());
+        let mut strides = intrinsic_strides_in_place(shape.clone());
         let len = strides.len();
         strides
             .iter_mut()
@@ -178,7 +214,9 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn stride<Z>(&self) -> Tensor<T, <S as StridedShape<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
+    pub fn stride<Z>(
+        &self,
+    ) -> Tensor<T, <S as StridedShape<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape + StridedShape<Z>,
         Z: StaticShape,
@@ -241,7 +279,9 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn transpose(&self) -> Tensor<T, <S as Transpose>::Output, C::Transposed, <L as Layout<'_, T>>::View, P>
+    pub fn transpose(
+        &self,
+    ) -> Tensor<T, <S as Transpose>::Output, C::Transposed, <L as Layout<'_, T>>::View, P>
     where
         S: Transpose,
         C: TransposePolicy,
@@ -358,7 +398,7 @@ impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
             current_shape,
             shape,
         );
-        let strides = internal_strides_in_place(shape.clone());
+        let strides = intrinsic_strides_in_place(shape.clone());
 
         Tensor {
             layout: self.as_view_unchecked(shape, strides, num_elements, num_elements),

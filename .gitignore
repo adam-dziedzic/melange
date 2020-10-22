@@ -1,4 +1,4 @@
 /target
 Cargo.lock
-/road_ai_macros/target
-/road_ai_macros/Cargo.lock
+/melange_macros/target
+/melange_macros/Cargo.lock

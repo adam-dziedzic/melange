@@ -1,9 +1,17 @@
 use super::layout::{Layout, LayoutMut};
 use super::shape::{NumElements, StaticShape};
 use super::slice_layout::SliceLayout;
-use generic_array::{GenericArray};
+use generic_array::GenericArray;
 use std::ops::{Deref, DerefMut};
 
+/// `array`-backed contiguous layout stored on the stack that requires
+/// a shape known at compile time. This is just a wrapper for
+/// the `generic_array` crate.
+///
+/// `StackLayout` comes with little runtime overhead and fast I/O
+/// because it is entirely stored on the stack.
+///
+/// CAUTION: big `StackLayout` can overflow the stack and cause a panic.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StackLayout<T, S>
 where

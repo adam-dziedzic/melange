@@ -1,9 +1,20 @@
+//! `core_ops` contains basic mathematical operations at the variable level
+//! that rely on the implementation of the `tensor` module.
+//! 
+//! Operands are moved, their values are used to compute the value
+//! of the resulting variable. Operands are eventually moved in the
+//! backpropagation closure if needed.
+//! 
+//! Since operands are smart poiters
+//! (`Variable` contains a combination of `Rc` and `RefCell`)
+//! only the "reference" is moved and cloning is costless.
+
 use crate::ring::Ring;
 use super::variable::{BackpropNode, Variable};
 use crate::tensor::allocation_policy::StaticAllocationPolicy;
 use crate::tensor::prelude::*;
 use crate::tensor::transpose_policy::Contiguous;
-use road_ai_macros::{define_closure, expand_operations};
+use melange_macros::{define_closure, expand_operations};
 use std::cell::RefCell;
 use std::ops::*;
 use std::rc::Rc;

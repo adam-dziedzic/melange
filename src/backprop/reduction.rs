@@ -1,8 +1,11 @@
+//! `reductions` contains reduction operations at the variable level
+//! that rely on the implementation of the `tensor` module.
+
 use super::variable::{BackpropNode, Variable};
 use crate::tensor::allocation_policy::StaticAllocationPolicy;
 use crate::tensor::prelude::*;
 use crate::tensor::transpose_policy::Contiguous;
-use road_ai_macros::{define_closure, expand_operations};
+use melange_macros::{define_closure, expand_operations};
 use std::cell::RefCell;
 use std::ops::*;
 use std::rc::Rc;
@@ -70,4 +73,3 @@ where
         })))
     }
 }
- 

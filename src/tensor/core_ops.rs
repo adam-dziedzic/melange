@@ -1,12 +1,45 @@
+//! `core_ops` contains basic mathematical operations at the tensor level
+//! that rely on the implementation of the underlying data type `T` of the
+//! tensor. There are two families of operations: functionnal operations
+//! and in-place operations.
+//! 
+//! Functionnal operations are methods that immutably borrow `self` and
+//! optionnaly borrow other tensors. They return new tensors that have been
+//! allocated following the allocation policy of `self` tensor.
+//! Conversely, in-place operations mutably borrow `self` and optionnaly
+//! immutably borrow other tensors to mutate directly mutate `self` data.
+//! 
+//! Functionnal operations are interesting when backpropagating because they
+//! preserve operands whereas in-place operations reduce the memory footprint.
+//! 
+//! Both families of operations perform ad-hoc parallel computation
+//! acording to how data is stored. Note that operations on more than one
+//! tensors require all tensors to have compatible shapes (all dimensions
+//! must be equal or `Dyn`). If this is not the case consider broadcasting.
+//!
+//! Due to the large amount of duplicate code
+//! between all the operations, this module relies on the `expand_operations`
+//! procedural macros defined in the `melange_macros` crate. This macro is
+//! able to adapt generic operation code (such as loops and iterators) to
+//! specific operations requirering specific bounds on `T` or its
+//! replacement with a concrete type like `f64`.
+//!
+//! Note that some methods are only available for tensors based on float
+//! types `f32` and `f64`. This is inherent to how numeric types are treated
+//! in rust.
+//! 
+//! Please refer to the definition of the scalar version of the mathematical
+//! operation in `std` for more.
+
 use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
 use super::layout::{Layout, LayoutMut};
 use super::shape::{ReprShape, ReprShapeDyn, Same, StaticShape, TRUE};
 use super::tensor::Tensor;
 use super::transpose_policy::Contiguous;
-use rayon::prelude::*;
-use road_ai_macros::expand_operations;
-use std::ops::*;
 use crate::ring::Ring;
+use rayon::prelude::*;
+use melange_macros::expand_operations;
+use std::ops::*;
 
 #[expand_operations(
     add<T: Send + Sync + Copy + Add<Output=T>>,
@@ -589,7 +622,6 @@ where
             self.shape(),
             other.shape()
         );
-        
         self.unchecked_(other);
     }
 }
@@ -666,7 +698,6 @@ where
             self.shape(),
             other.shape()
         );
-        
         self.unchecked_(other);
     }
 }
@@ -803,9 +834,7 @@ where
         let chunk_size = self.opt_chunk_size();
 
         for chunk_self in self.chunks_mut(chunk_size) {
-            chunk_self
-                .par_iter_mut()
-                .for_each(|x| *x = x.placeholder());
+            chunk_self.par_iter_mut().for_each(|x| *x = x.placeholder());
         }
     }
 }
@@ -846,8 +875,7 @@ where
         Lrhs1: for<'a> Layout<'a, T>,
         Lrhs2: for<'a> Layout<'a, T>,
     {
-        let chunk_size = other1.opt_chunk_size()
-            .min(other2.opt_chunk_size());
+        let chunk_size = other1.opt_chunk_size().min(other2.opt_chunk_size());
 
         for ((chunk_self, chunk_other1), chunk_other2) in self
             .chunks_mut(chunk_size)
@@ -866,8 +894,7 @@ where
         &mut self,
         other1: &Tensor<T, S, Crhs1, Lrhs1, Prhs1>,
         other2: &Tensor<T, S, Crhs2, Lrhs2, Prhs2>,
-    )
-    where
+    ) where
         S: StaticShape,
         Lrhs1: for<'a> Layout<'a, T>,
         Lrhs2: for<'a> Layout<'a, T>,
@@ -875,13 +902,11 @@ where
         self.unchecked_(other1, other2);
     }
 
-    
     pub fn dynamic_<Srhs1, Crhs1, Lrhs1, Prhs1, Srhs2, Crhs2, Lrhs2, Prhs2>(
         &mut self,
         other1: &Tensor<T, Srhs1, Crhs1, Lrhs1, Prhs1>,
         other2: &Tensor<T, Srhs2, Crhs2, Lrhs2, Prhs2>,
-    )
-    where
+    ) where
         L: for<'a> Layout<'a, T>,
         Lrhs1: for<'a> Layout<'a, T>,
         Lrhs2: for<'a> Layout<'a, T>,

@@ -1,3 +1,14 @@
+//! `linear_algebra` contains algebra-specific operations.
+//! It is currently limited to vector/vector, matrix/vector,
+//! and matrix/matrix dot products. It is entirely backed by
+//! openblas through C bindings.
+//!
+//! To avoid code duplication, this module relies on the
+//! `expand_operations` procedural macro from the `melange_macro` crate.
+//!
+//! Note that only 1 dimmensional tensors are considered vectors
+//! and that only two dimmensional tensors are considered matrices.
+
 extern crate cblas;
 extern crate openblas_src;
 
@@ -5,9 +16,9 @@ use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
 use super::layout::Layout;
 use super::shape::{Shape1D, Shape2D, TRUE};
 use super::tensor::Tensor;
-use super::transpose_policy::{Contiguous, BLASPolicy};
-use cblas::{dgemm, sgemm, dgemv, sgemv, sdot, ddot};
-use road_ai_macros::expand_operations;
+use super::transpose_policy::{BLASPolicy, Contiguous};
+use cblas::{ddot, dgemm, dgemv, sdot, sgemm, sgemv};
+use melange_macros::expand_operations;
 use typenum::{Eq, IsEqual, Unsigned};
 
 #[expand_operations(
@@ -276,23 +287,12 @@ where
     L: for<'a> Layout<'a, T>,
     C: BLASPolicy,
 {
-    pub fn operation<Crhs, Lrhs, Prhs>(
-        &self,
-        other: &Tensor<T, Shape1D<N>, Crhs, Lrhs, Prhs>,
-    ) -> T
+    pub fn operation<Crhs, Lrhs, Prhs>(&self, other: &Tensor<T, Shape1D<N>, Crhs, Lrhs, Prhs>) -> T
     where
         N: Unsigned,
         Lrhs: for<'a> Layout<'a, T>,
     {
-        unsafe {
-            placeholder(
-                N::I32,
-                self,
-                1,
-                other,
-                1,
-            )
-        }
+        unsafe { placeholder(N::I32, self, 1, other, 1) }
     }
 
     pub fn dynamic<Nrhs, Crhs, Lrhs, Prhs>(
@@ -312,14 +312,6 @@ where
             self_shape[0], other_shape[0], self_shape, other_shape,
         );
 
-        unsafe {
-            placeholder(
-                self_shape[0] as i32,
-                self,
-                1,
-                other,
-                1,
-            )
-        }
+        unsafe { placeholder(self_shape[0] as i32, self, 1, other, 1) }
     }
 }

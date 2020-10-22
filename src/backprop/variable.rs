@@ -1,20 +1,22 @@
-use crate::tensor::prelude::*;
 use crate::tensor::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
+use crate::tensor::prelude::*;
 use crate::tensor::transpose_policy::Contiguous;
 use std::cell::RefCell;
+use std::fmt;
 use std::ops::{AddAssign, Deref};
 use std::rc::Rc;
-use std::fmt;
 
-pub struct BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
-{
+/// Groups the value, gradient option and backpropagation closure as a sigle entity.
+/// Fields are public in the parent module (`backprop`).
+pub struct BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
     pub(super) value: Tensor<T, S, C, L, P>,
     pub(super) grad: Option<Tensor<T, S, Contiguous, Lgrad, P>>,
     pub(super) backward_op_name: &'static str,
     pub(super) backward_closure: Box<dyn Fn(Tensor<T, S, Cback, Lback, Pback>) -> ()>,
 }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug
+    for BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
 where
     T: fmt::Debug,
     S: fmt::Debug,
@@ -25,16 +27,22 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Variable")
-         .field("value", &self.value)
-         .field("grad", &self.grad)
-         .field("backward_op", &self.backward_op_name)
-         .finish()
+            .field("value", &self.value)
+            .field("grad", &self.grad)
+            .field("backward_op", &self.backward_op_name)
+            .finish()
     }
 }
 
-pub struct Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>(pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>);
+/// Core type of `backprop` module that represents a node in the computation
+/// graph. It contains a combination of `Rc` and `RefCell` to allow
+/// mutable reference counting of the actual `BackpropNode`s.
+pub struct Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>(
+    pub(super) Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>,
+);
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> fmt::Debug
+    for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
 where
     T: fmt::Debug,
     S: fmt::Debug,
@@ -49,7 +57,9 @@ where
     }
 }
 
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Deref for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Deref
+    for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+{
     type Target = Rc<RefCell<BackpropNode<T, S, C, L, P, Lgrad, Cback, Lback, Pback>>>;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -60,6 +70,7 @@ impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Variable<T, S, C, L, P, Lgrad, C
 where
     Tensor<T, S, Contiguous, Lgrad, P>: Clone,
 {
+    // Returns an option to a copy of the gradient.
     pub fn grad(&self) -> Option<Tensor<T, S, Contiguous, Lgrad, P>> {
         self.borrow().grad.clone()
     }
@@ -71,6 +82,10 @@ where
     L: for<'a> Layout<'a, T>,
     P: StaticAllocationPolicy<T, S>,
 {
+    /// Add given gradient to the retained gradient if needed and
+    /// backpropagate using the closure.
+    ///
+    /// To initiate backpropagation a tensor full of ones is a good choice.
     pub fn backward(&self, grad: Tensor<T, S, Cback, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
@@ -87,6 +102,8 @@ where
         (node.backward_closure)(grad);
     }
 
+    /// Create a new variable that retains its gradient if require_grad is true
+    /// by moving the given tensor.
     pub fn new(tensor: Tensor<T, S, C, L, P>, require_grad: bool) -> Self {
         Variable(Rc::new(RefCell::new(BackpropNode {
             value: tensor,
@@ -106,6 +123,14 @@ where
     L: for<'a> Layout<'a, T>,
     P: DynamicAllocationPolicy<T>,
 {
+    /// Dynamic version of the backpropagation function.
+    /// Name has to be different because specialization is not yet
+    /// available in stable Rust.
+    ///
+    /// Add given gradient to the retained gradient if needed and
+    /// backpropagate using the closure.
+    ///
+    /// To initiate backpropagation a tensor full of ones is a good choice.
     pub fn backward_dynamic(&self, grad: Tensor<T, S, Cback, Lback, Pback>)
     where
         T: Send + Sync + Copy + AddAssign,
@@ -136,18 +161,9 @@ where
     }
 }
 
-// impl<T, S> From<StaticTensor<T, S>> for Variable<T, S, Contiguous, StaticHeapLayout<T, S>, DefaultPolicy, Lgrad> {
-//     fn from(tensor_like: Box<dyn TensorLike<T, S>>) -> Self {
-//         Variable(Rc::new(RefCell::new(BackpropNode {
-//             value: tensor_like,
-//             grad: None,
-//             require_grad: false,
-//             backward_closure: Box::new(|| ()),
-//         })))
-//     }
-// }
-
-impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Clone for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback> {
+impl<T, S, C, L, P, Lgrad, Cback, Lback, Pback> Clone
+    for Variable<T, S, C, L, P, Lgrad, Cback, Lback, Pback>
+{
     fn clone(&self) -> Self {
         Variable(Rc::clone(&self.0))
     }

@@ -5,6 +5,24 @@ use std::ops::Deref;
 mod strided_chunks;
 use strided_chunks::StridedChunks;
 
+/// `SliceLayout` is a very flexible non-contiguous slice-backed layout.
+/// It enables the creation of tensors that are views on other
+/// tensors becuase it does not own the data. The internal slice
+/// can actually point to any contiguous part of memory on the stack
+/// or the heap that can be borrowed.
+///
+/// `SliceLayout` comes with some memory overhead to be able to keep
+/// track of how borrowed data is used. It stores:
+/// * the shape
+/// * the actual strides (i.e. product of intrinsic and extrinsic strides)
+/// * the number of elements
+/// * the optimal chunk size (i.e. largest contiguous data pieces)
+///
+/// Note: The intrinsic strides are the cumulative product of the dimensions
+/// and the extrinsic strides follow the ususal ML definition.
+///
+/// `SliceLayout` is the default view layout in Melange and should
+/// be prefered unless you have specific needs.
 #[derive(Debug, Clone)]
 pub struct SliceLayout<'a, T> {
     data: &'a [T],

@@ -1,4 +1,12 @@
-use road_ai_macros::expand_operations;
+//! `ring` defines the `Ring` trait that provides useful
+//! features of algebraic rings such as identity elements
+//! and multiplicative inversion.
+//! 
+//! It is implemented for all numeric primitive types
+//! thanks to `expand_operations` procedural macro from
+//! `melange_macros` crate.
+
+use melange_macros::expand_operations;
 use std::ops::*;
 
 pub trait Ring {

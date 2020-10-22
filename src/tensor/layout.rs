@@ -1,5 +1,19 @@
 use std::ops::{Deref, DerefMut};
 
+/// This trait defines the basic behavior of any data layout.
+///
+/// It provides utility methods to access basic information
+/// about the data such as its shape and strides.
+///
+/// It also provides a `chunks` method that returns an Iterator
+/// of `&[T]` slices of a given length whose type is defined by the
+/// implementation.
+/// This method is virtually used by all the mathematical operations
+/// to get maximal contiguous chunks of data and optimize parallelization.
+///
+/// `Layout` also defines an associated  type `View` that represents the
+/// Layout that should be used by all non-allocating operations
+/// (e.g. broadcasting).
 pub trait Layout<'a, T>: Deref<Target = [T]>
 where
     T: 'a,

@@ -1,10 +1,21 @@
+//! `reductions` contains mathematical operations that aply to one
+//! tensor and output a tensor with the same shape except for one
+//! dimension that is reduced to 1.
+//! This covers sum, product, max and min over a certain axis.
+//!
+//! Like core ops, these methods heavily use the chunks feature
+//! of the `Layout` trait to parallelize.
+//!
+//! To avoid code duplication, this module relies on the
+//! `expand_operations` procedural macro from the `melange_macro` crate.
+
 use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
 use super::layout::{Layout, LayoutMut};
 use super::shape::{At, Reduction, ReductionOptChunckSize};
 use super::tensor::Tensor;
 use super::transpose_policy::Contiguous;
 use rayon::prelude::*;
-use road_ai_macros::expand_operations;
+use melange_macros::expand_operations;
 use std::ops::*;
 use typenum::Unsigned;
 
