@@ -6,7 +6,7 @@
 //! thanks to `expand_operations` procedural macro from
 //! `melange_macros` crate.
 
-use melange_macros::expand_operations;
+use melange_macros::expand_impl;
 use std::ops::*;
 
 pub trait Ring {
@@ -21,7 +21,7 @@ pub trait Ring {
     }
 }
 
-#[expand_operations(
+#[expand_impl(
     _f64<T=f64>,
     _f32<T=f32>,
 )]
@@ -30,7 +30,7 @@ impl<T> Ring for T {
     const ONE: T = 1.0;
 }
 
-#[expand_operations(
+#[expand_impl(
     _u128<T=u128>,
     _u64<T=u64>,
     _u32<T=u32>,

@@ -12,8 +12,8 @@ use std::ops::{Deref, DerefMut};
 /// be prefered unless you have specific needs.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StaticHeapLayout<T, S> {
-    data: Vec<T>,
-    _phantoms: PhantomData<S>,
+    pub(super) data: Vec<T>,
+    pub(super) _phantoms: PhantomData<S>,
 }
 
 impl<T, S> Default for StaticHeapLayout<T, S>
@@ -83,7 +83,13 @@ where
         num_elements: usize,
         opt_chunk_size: usize,
     ) -> Self::View {
-        SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
+        SliceLayout {
+            data: &self.data,
+            shape,
+            strides,
+            num_elements,
+            opt_chunk_size,
+        }
     }
 }
 

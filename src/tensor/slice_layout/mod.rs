@@ -25,11 +25,11 @@ use strided_chunks::StridedChunks;
 /// be prefered unless you have specific needs.
 #[derive(Debug, Clone)]
 pub struct SliceLayout<'a, T> {
-    data: &'a [T],
-    shape: Vec<usize>,
-    strides: Vec<usize>,
-    num_elements: usize,
-    opt_chunk_size: usize,
+    pub(in crate::tensor) data: &'a [T],
+    pub(in crate::tensor) shape: Vec<usize>,
+    pub(in crate::tensor) strides: Vec<usize>,
+    pub(in crate::tensor) num_elements: usize,
+    pub(in crate::tensor) opt_chunk_size: usize,
 }
 
 impl<'a, T> SliceLayout<'a, T> {
@@ -45,21 +45,21 @@ impl<'a, T> SliceLayout<'a, T> {
         &self.data[index..index + size]
     }
 
-    pub fn from_slice_unchecked(
-        slice: &'a [T],
-        shape: Vec<usize>,
-        strides: Vec<usize>,
-        num_elements: usize,
-        opt_chunk_size: usize,
-    ) -> Self {
-        SliceLayout {
-            data: slice,
-            shape,
-            strides,
-            num_elements,
-            opt_chunk_size,
-        }
-    }
+    // pub(in super::super) fn from_slice_unchecked(
+    //     slice: &'a [T],
+    //     shape: Vec<usize>,
+    //     strides: Vec<usize>,
+    //     num_elements: usize,
+    //     opt_chunk_size: usize,
+    // ) -> Self {
+    //     SliceLayout {
+    //         data: slice,
+    //         shape,
+    //         strides,
+    //         num_elements,
+    //         opt_chunk_size,
+    //     }
+    // }
 }
 
 impl<'a, 'b, T> Layout<'b, T> for SliceLayout<'a, T>
@@ -101,7 +101,13 @@ where
         num_elements: usize,
         opt_chunk_size: usize,
     ) -> Self::View {
-        SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
+        SliceLayout {
+            data: self.data,
+            shape,
+            strides,
+            num_elements,
+            opt_chunk_size,
+        }
     }
 }
 

@@ -74,7 +74,13 @@ where
         num_elements: usize,
         opt_chunk_size: usize,
     ) -> Self::View {
-        SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
+        SliceLayout {
+            data: &self.data,
+            shape,
+            strides,
+            num_elements,
+            opt_chunk_size,
+        }
     }
 }
 

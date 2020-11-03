@@ -66,16 +66,19 @@ mod tests {
             1
         );
         assert_eq!(<Shape4D<U5, U1, U3, U2> as At<U2>>::Output::USIZE, 3);
-        assert_eq!(<<Shape4D<U4, U3, U6, U6> as Transpose>::Output as StaticShape>::to_vec(), vec![6, 6, 3, 4]);
+        assert_eq!(
+            <<Shape4D<U4, U3, U6, U6> as Transpose>::Output as StaticShape>::to_vec(),
+            vec![6, 6, 3, 4]
+        );
     }
 
     #[test]
     fn broadcast_same_order() {
-        let a: SliceTensor<i32, Shape2D<U1, U2>> = Tensor::from_slice(&[1, 2]);
-        let b: StridedSliceTensor<_, Shape2D<U2, U2>> = a.broadcast();
+        let a: StaticTensor<i32, Shape2D<U1, U2>> = Tensor::try_from(vec![1, 2]).unwrap();
+        let b: StridedStaticSliceTensor<_, Shape2D<U2, U2>> = a.broadcast();
 
-        let c: StridedSliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 2, 1, 2]);
-        assert_eq!(b, c);
+        let c: StaticTensor<i32, Shape2D<U2, U2>> = Tensor::try_from(vec![1, 2, 1, 2]).unwrap();
+        assert_eq!(b, c.stride::<Shape2D<U1, U1>>());
         assert_eq!(b.shape(), vec![2, 2]);
         assert_eq!(b.strides(), vec![0, 1]);
         assert_eq!(b.opt_chunk_size(), 2);
@@ -83,11 +86,11 @@ mod tests {
 
     #[test]
     fn broadcast_different_order() {
-        let a: SliceTensor<i32, Shape1D<U2>> = Tensor::from_slice(&[1, 2]);
-        let b: StridedSliceTensor<_, Shape2D<U2, U2>> = a.broadcast();
+        let a: StaticTensor<i32, Shape1D<U2>> = Tensor::try_from(vec![1, 2]).unwrap();
+        let b: StridedStaticSliceTensor<_, Shape2D<U2, U2>> = a.broadcast();
 
-        let c: StridedSliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 2, 1, 2]);
-        assert_eq!(b, c);
+        let c: StaticTensor<i32, Shape2D<U2, U2>> = Tensor::try_from(vec![1, 2, 1, 2]).unwrap();
+        assert_eq!(b, c.stride::<Shape2D<U1, U1>>());
         assert_eq!(b.shape(), vec![2, 2]);
         assert_eq!(b.strides(), vec![0, 1]);
         assert_eq!(b.opt_chunk_size(), 2);
@@ -95,14 +98,11 @@ mod tests {
 
     #[test]
     fn reshape() {
-        let mut a: StaticTensor<i32, Shape1D<U4>> = Tensor::default();
-        for (x, y) in a.iter_mut().zip(&[1, 2, 1, 2]) {
-            *x = *y;
-        }
-        let b: SliceTensor<_, Shape2D<U2, U2>> = a.reshape();
+        let a: StaticTensor<i32, Shape1D<U4>> = Tensor::try_from(vec![1, 2, 1, 2]).unwrap();
+        let b: StaticSliceTensor<_, Shape2D<U2, U2>> = a.reshape();
 
-        let c: SliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 2, 1, 2]);
-        assert_eq!(b, c);
+        let c: StaticTensor<i32, Shape2D<U2, U2>> = Tensor::try_from(vec![1, 2, 1, 2]).unwrap();
+        assert_eq!(b, c.as_view());
         assert_eq!(b.shape(), vec![2, 2]);
         assert_eq!(b.strides(), vec![2, 1]);
         assert_eq!(b.opt_chunk_size(), 4);
@@ -110,88 +110,102 @@ mod tests {
 
     #[test]
     fn add() {
-        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
-        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
+        let a: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
+        let b: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 1, 1, 1, 1, 1, 1, 1, 1]).unwrap();
         let c = a.add(&b);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn mul() {
-        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 3, 0, 0, 0, 1]);
-        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[3, 1, 1, 1, 1, 1, 1, 1, 1]);
+        let a: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 3, 0, 0, 0, 1]).unwrap();
+        let b: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![3, 1, 1, 1, 1, 1, 1, 1, 1]).unwrap();
         let c = a.mul(&b);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[3, 0, 0, 0, 3, 0, 0, 0, 1]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![3, 0, 0, 0, 3, 0, 0, 0, 1]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
-    fn add_static_ok() {
-        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let b: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
-        let c = a.add_coerce(&b);
+    fn add_coerce_ok() {
+        let a: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
+        let b: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 1, 1, 1, 1, 1, 1, 1, 1]).unwrap();
+        let c = a.add(&b);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     #[should_panic(expected = "Tensors must have same shape")]
     fn add_static_panic() {
-        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let b: SliceTensor<i32, Shape2D<U2, U2>> = Tensor::from_slice(&[1, 1, 1, 1]);
-        let _c = a.add_coerce(&b);
+        let a: DynamicTensor<i32, Shape2D<Dyn, U2>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0]).unwrap();
+        let b: StaticTensor<i32, Shape2D<U2, U2>> = Tensor::try_from(vec![1, 1, 1, 1]).unwrap();
+        let _c = a.add(&b);
     }
 
     #[test]
     fn add_dyn_ok() {
-        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let b: SliceTensor<i32, Shape2D<U3, Dyn>> =
-            Tensor::from_slice_dyn(&[1, 1, 1, 1, 1, 1, 1, 1, 1], vec![3, 3]);
+        let a: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
+        let b: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1, 1, 1, 1, 1, 1, 1, 1, 1]).unwrap();
         let c = a.add_dynamic(&b);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn add_broadcast() {
-        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
-        let b: SliceTensor<i32, Shape1D<U3>> = Tensor::from_slice(&[1, 1, 1]);
+        let a: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
+        let b: StaticTensor<i32, Shape1D<U3>> = Tensor::try_from(vec![1, 1, 1]).unwrap();
         let c: StaticTensor<_, _> = a.add(&b.broadcast());
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn scal_add() {
-        let a: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        let a: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
         let c = a.scal_add(1);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<i32, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn scal_add_dyn() {
-        let a: SliceTensor<i32, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1, 0, 0, 0, 1, 0, 0, 0, 1], vec![3, 3]);
-        let c = a.scal_add_dynamic(1);
+        let a: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1, 0, 0, 0, 1, 0, 0, 0, 1]).unwrap();
+        let c = a.scal_add(1);
 
-        let d: SliceTensor<i32, Shape2D<U3, U3>> = Tensor::from_slice(&[2, 1, 1, 1, 2, 1, 1, 1, 2]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<i32, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![2, 1, 1, 1, 2, 1, 1, 1, 2]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn exp() {
-        let data = [
+        let a: StaticTensor<f64, Shape2D<U3, U3>> = Tensor::try_from(vec![
             2.0_f64.ln(),
             0.0,
             0.0,
@@ -201,18 +215,18 @@ mod tests {
             0.0,
             0.0,
             2.0_f64.ln(),
-        ];
-        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&data);
+        ])
+        .unwrap();
         let c = a.exp();
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn exp_dyn() {
-        let data = [
+        let a: DynamicTensor<f64, Shape2D<Dyn, U3>> = Tensor::try_from(vec![
             2.0_f64.ln(),
             0.0,
             0.0,
@@ -222,180 +236,177 @@ mod tests {
             0.0,
             0.0,
             2.0_f64.ln(),
-        ];
-        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> = Tensor::from_slice_dyn(&data, vec![3, 3]);
-        let c = a.exp_dynamic();
+        ]).unwrap();
+        let c = a.exp();
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn powi() {
-        let a: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]);
+        let a: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]).unwrap();
         let c = a.powi(2);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn powi_dyn() {
-        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0], vec![3, 3]);
-        let c = a.powi_dynamic(2);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0]).unwrap();
+        let c = a.powi(2);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![4.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 4.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn max() {
-        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 0.0, 5.0, 9.0]);
-        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 0.0, 5.0, 9.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![3.0, 1.0, 0.0, 1.0]).unwrap();
         let c = a.max(&b);
 
-        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![3.0, 1.0, 5.0, 9.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn max_static() {
-        let a: SliceTensor<f64, Shape2D<Dyn, U2>> =
-            Tensor::from_slice_dyn(&[1.0, 0.0, 5.0, 9.0], vec![2, 2]);
-        let b: SliceTensor<f64, Shape2D<U2, Dyn>> =
-            Tensor::from_slice_dyn(&[3.0, 1.0, 0.0, 1.0], vec![2, 2]);
-        let c = a.max_coerce(&b);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U2>> =
+            Tensor::try_from(vec![1.0, 0.0, 5.0, 9.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U2, U2>> =
+            Tensor::try_from(vec![3.0, 1.0, 0.0, 1.0]).unwrap();
+        let c = a.max(&b);
 
-        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![3.0, 1.0, 5.0, 9.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn max_dyn() {
-        let a: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1.0, 0.0, 5.0, 9.0], vec![2, 2]);
-        let b: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[3.0, 1.0, 0.0, 1.0], vec![2, 2]);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U2>> =
+            Tensor::try_from(vec![1.0, 0.0, 5.0, 9.0]).unwrap();
+        let b: DynamicTensor<f64, Shape2D<Dyn, U2>> =
+            Tensor::try_from(vec![3.0, 1.0, 0.0, 1.0]).unwrap();
         let c = a.max_dynamic(&b);
 
-        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[3.0, 1.0, 5.0, 9.0]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<f64, Shape2D<Dyn, U2>> = Tensor::try_from(vec![3.0, 1.0, 5.0, 9.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn mul_add() {
-        let a: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        let x: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]);
-        let b: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let x: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
         let c = a.mul_add(&x, &b);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn mul_add_static() {
-        let a: SliceTensor<f64, Shape2D<Dyn, U3>> =
-            Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
-        let x: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0], vec![3, 3]);
-        let b: SliceTensor<f64, Shape2D<U3, Dyn>> =
-            Tensor::from_slice_dyn(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0], vec![3, 3]);
-        let c = a.mul_add_coerce(&x, &b);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let x: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+        let c = a.mul_add(&x, &b);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn mul_add_dyn() {
-        let a: SliceTensor<f64, Shape2D<Dyn, U3>> =
-            Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
-        let x: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0], vec![3, 3]);
-        let b: SliceTensor<f64, Shape2D<Dyn, Dyn>> =
-            Tensor::from_slice_dyn(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0], vec![3, 3]);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let x: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0]).unwrap();
+        let b: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
         let c = a.mul_add_dynamic(&x, &b);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn scal_mal_add() {
-        let a: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
         let c = a.scal_mul_add(2.0, 1.0);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn scal_mul_add_dyn() {
-        let a: SliceTensor<f64, Shape2D<Dyn, U3>> =
-            Tensor::from_slice_dyn(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], vec![3, 3]);
-        let c = a.scal_mul_add_dynamic(2.0, 1.0);
+        let a: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let c = a.scal_mul_add(2.0, 1.0);
 
-        let d: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]);
-        assert_eq!(c.as_static(), d);
+        let d: DynamicTensor<f64, Shape2D<Dyn, U3>> =
+            Tensor::try_from(vec![3.0, 1.0, 1.0, 1.0, 3.0, 1.0, 1.0, 1.0, 3.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn sum() {
-        let a: SliceTensor<f64, Shape2D<U3, U3>> =
-            Tensor::from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U3, U3>> =
+            Tensor::try_from(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
         let c = a.sum::<U1>();
 
-        let d: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&[1.0, 1.0, 1.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U3, U1>> = Tensor::try_from(vec![1.0, 1.0, 1.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn inverse_dot() {
-        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
-        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, -1.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 1.0, 0.0, 1.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, -1.0, 0.0, 1.0]).unwrap();
         let c = a.dot(&b);
 
-        let d: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 1.0]);
-        assert_eq!(c.as_view(), d);
+        let d: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 0.0, 0.0, 1.0]).unwrap();
+        assert_eq!(c, d);
     }
 
     #[test]
     fn rotation_dot() {
         use std::f64::consts::FRAC_PI_4;
         use std::f64::EPSILON;
-        let a_data = [FRAC_PI_4.cos(), -FRAC_PI_4.sin(), 0.0, FRAC_PI_4.sin(), FRAC_PI_4.cos(), 0.0, 0.0, 0.0, 1.0];
-        let d_data = [FRAC_PI_4.cos(), FRAC_PI_4.cos(), 3.0];
-        let a: SliceTensor<f64, Shape2D<U3, U3>> = Tensor::from_slice(&a_data);
-        let b: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&[1.0, 0.0, 3.0]);
+        let a: StaticTensor<f64, Shape2D<U3, U3>> = Tensor::try_from(vec![FRAC_PI_4.cos(), -FRAC_PI_4.sin(), 0.0, FRAC_PI_4.sin(), FRAC_PI_4.cos(), 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U3, U1>> = Tensor::try_from(vec![1.0, 0.0, 3.0]).unwrap();
         let c = a.dot(&b);
-        
-        let t: SliceTensor<f64, Shape2D<U3, U1>> = Tensor::from_slice(&d_data);
+        let t: StaticTensor<f64, Shape2D<U3, U1>> = Tensor::try_from(vec![FRAC_PI_4.cos(), FRAC_PI_4.cos(), 3.0]).unwrap();
         let d = c.sub(&t).sum::<U0>().chunks(1).nth(0).unwrap()[0];
         assert!(d < EPSILON);
     }
 
     #[test]
     fn transpose() {
-        let a: SliceTensor<i32, Shape2D<U2, U3>> = Tensor::from_slice(&[1, 2, 3, 4, 5, 6]);
+        let a: StaticTensor<i32, Shape2D<U2, U3>> = Tensor::try_from(vec![1, 2, 3, 4, 5, 6]).unwrap();
         let b = a.transpose();
 
-        let c: SliceTensor<i32, Shape2D<U3, U2>> = Tensor::from_slice(&[1, 4, 2, 5, 3, 6]);
-        assert_eq!(*b, *c);
+        let c: StaticTensor<i32, Shape2D<U3, U2>> = Tensor::try_from(vec![1, 4, 2, 5, 3, 6]).unwrap();
+        let d = b.sub(&c).sum::<U0>().sum::<U1>().chunks(1).nth(0).unwrap()[0];
+        assert_eq!(d, 0);
         assert_eq!(b.shape(), vec![3, 2]);
         assert_eq!(b.strides(), vec![1, 3]);
         assert_eq!(b.opt_chunk_size(), 1);
@@ -403,23 +414,22 @@ mod tests {
 
     #[test]
     fn backprop() {
-        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
-        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 1.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 1.0, 0.0, 1.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 1.0, 0.0, 1.0]).unwrap();
 
         let a = Variable::new(a, true);
         let b = Variable::new(b, false);
 
-        let c = Variable::clone(&a) + b;
+        let c: Variable<_, _, _, _, _, _, _, _, _, _, _, _> = Variable::clone(&a) + b;
         c.backward(StaticTensor::fill(1.0));
-        
         assert_eq!(a.grad().unwrap(), StaticTensor::fill(1.0));
     }
 
     #[test]
     fn backprop2() {
-        let a: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0]);
-        let b: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[2.0, 1.0, 0.0, 2.0]);
-        let c: SliceTensor<f64, Shape2D<U2, U2>> = Tensor::from_slice(&[1.0, 0.0, 0.0, 1.0]);
+        let a: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let b: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![2.0, 1.0, 0.0, 2.0]).unwrap();
+        let c: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![1.0, 0.0, 0.0, 1.0]).unwrap();
 
         let a = Variable::new(a, true);
         let b = Variable::new(b, false);
@@ -428,12 +438,13 @@ mod tests {
         let a_times_b = Variable::clone(&a) * b;
         let result = a_times_b + c;
         result.backward(StaticTensor::fill(1.0));
-        
-        assert_eq!(a.grad().unwrap().as_view(), Tensor::from_slice(&[2.0, 1.0, 0.0, 2.0]));
+
+        let d: StaticTensor<f64, Shape2D<U2, U2>> = Tensor::try_from(vec![2.0, 1.0, 0.0, 2.0]).unwrap();
+        assert_eq!(a.grad().unwrap(), d);
     }
 }
 
-pub mod prelude;
-pub mod tensor;
 pub mod backprop;
+pub mod prelude;
 pub mod ring;
+pub mod tensor;

@@ -48,6 +48,7 @@ unsafe impl TRUE for B1 {}
 /// It implements comparisons with type level unsigned integers and
 /// is considered equal to all of them. This involves Dyn is compatible
 /// with any dimension.
+#[derive(Debug, PartialEq)]
 pub struct Dyn;
 impl<U> Cmp<U> for Dyn
 where
@@ -268,11 +269,11 @@ pub unsafe trait StridedDim<Rhs> {
 unsafe impl<U, B, V> StridedDim<V> for UInt<U, B>
 where
     V: StaticDim,
-    U: Div<V> + Rem<V>,
-    <U as Rem<V>>::Output: IsGreater<U0>,
-    <U as Div<V>>::Output: Add<Gr<<U as Rem<V>>::Output, U0>>,
+    Self: Div<V> + Rem<V>,
+    <Self as Rem<V>>::Output: IsGreater<U0>,
+    <Self as Div<V>>::Output: Add<Gr<<Self as Rem<V>>::Output, U0>>,
 {
-    type Output = Sum<<U as Div<V>>::Output, Gr<<U as Rem<V>>::Output, U0>>;
+    type Output = Sum<<Self as Div<V>>::Output, Gr<<Self as Rem<V>>::Output, U0>>;
 }
 
 unsafe impl<V> StridedDim<V> for Dyn {
@@ -583,6 +584,9 @@ where
 {
     type Output = <<A as Transpose>::Output as Insert<S>>::Output;
 }
+
+pub type Static = B1;
+pub type Dynamic = B0;
 
 /// 1D shape alias.
 pub type Shape1D<S0> = TArr<S0, ATerm>;

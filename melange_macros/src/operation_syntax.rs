@@ -1,9 +1,10 @@
-use proc_macro2::Ident;
-use std::ops::Deref;
+use proc_macro2::{Ident, TokenStream, Spacing, Punct};
+use std::ops::{Deref, DerefMut};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::token::{As, Colon, Comma, Eq, Gt, In, Lt, Paren};
-use syn::{Error, Result, Type, WherePredicate};
+use syn::token::{As, Comma, Eq, Gt, In, Lt, Paren};
+use syn::{Result, Type, WherePredicate, punctuated::Pair};
+use quote::{ToTokens, TokenStreamExt};
 
 pub struct EqPredicate {
     pub lhs_ty: Ident,
@@ -21,6 +22,14 @@ impl Parse for EqPredicate {
     }
 }
 
+impl ToTokens for EqPredicate {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.lhs_ty.to_tokens(tokens);
+        self.eq_token.to_tokens(tokens);
+        self.rhs_ty.to_tokens(tokens);
+    }
+}
+
 pub enum OperationBound {
     Type(WherePredicate),
     Eq(EqPredicate),
@@ -30,10 +39,22 @@ impl Parse for OperationBound {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek2(Eq) {
             Ok(OperationBound::Eq(input.parse()?))
-        } else if input.peek2(Colon) {
-            Ok(OperationBound::Type(input.parse()?))
+        // } else if input.peek2(Colon) {
+        //     Ok(OperationBound::Type(input.parse()?))
+        // } else {
+        //     Err(Error::new(input.span(), "Unexpected token."))
+        // }
         } else {
-            Err(Error::new(input.span(), "Unexpected token."))
+            Ok(OperationBound::Type(input.parse()?))
+        }
+    }
+}
+
+impl ToTokens for OperationBound {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Type(predicate) => predicate.to_tokens(tokens),
+            Self::Eq(predicate) => predicate.to_tokens(tokens),
         }
     }
 }
@@ -41,7 +62,7 @@ impl Parse for OperationBound {
 pub struct Operation {
     pub ident: Ident,
     pub lt_token: Option<Lt>,
-    pub bound: Option<OperationBound>,
+    pub bounds: Option<Punctuated<OperationBound, Comma>>,
     pub gt_token: Option<Gt>,
     pub paren_token: Option<Paren>,
     pub types: Option<Punctuated<Type, Comma>>,
@@ -54,13 +75,28 @@ pub struct Operation {
 impl Parse for Operation {
     fn parse(input: ParseStream) -> Result<Self> {
         let ident = input.parse()?;
-        let (lt_token, bound, gt_token) = match input.parse() {
+        let (lt_token, bounds, gt_token) = match input.parse() {
             Ok(token) => {
                 let lt_token = Some(token);
-                let bound = Some(input.parse()?);
+                let bounds = Some({
+                    let mut args = Punctuated::new();
+                    loop {
+                        if input.peek(Gt) {
+                            break;
+                        }
+                        let value = input.parse()?;
+                        args.push_value(value);
+                        if input.peek(Gt) {
+                            break;
+                        }
+                        let punct = input.parse()?;
+                        args.push_punct(punct);
+                    }
+                    args
+                });
                 let gt_token = Some(input.parse()?);
 
-                (lt_token, bound, gt_token)
+                (lt_token, bounds, gt_token)
             }
             Err(_) => (None, None, None),
         };
@@ -95,7 +131,7 @@ impl Parse for Operation {
         Ok(Operation {
             ident,
             lt_token,
-            bound,
+            bounds,
             gt_token,
             paren_token,
             types,
@@ -104,6 +140,55 @@ impl Parse for Operation {
             in_token,
             trait_impl,
         })
+    }
+}
+
+impl ToTokens for Operation {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.ident.to_tokens(tokens);
+
+        if let Some(lt_token) = &self.lt_token {
+            lt_token.to_tokens(tokens);
+            for pair in self.bounds.as_ref().unwrap().pairs() {
+                match pair {
+                    Pair::Punctuated(bound, comma) => {
+                        bound.to_tokens(tokens);
+                        comma.to_tokens(tokens);
+                    },
+                    Pair::End(bound) => {
+                        bound.to_tokens(tokens);
+                    }
+                }
+            }
+            self.gt_token.as_ref().unwrap().to_tokens(tokens);
+        }
+        
+        
+        if let Some(_) = &self.paren_token {
+            tokens.append(Punct::new('(', Spacing::Alone));
+            for pair in self.types.as_ref().unwrap().pairs() {
+                match pair {
+                    Pair::Punctuated(ty, comma) => {
+                        ty.to_tokens(tokens);
+                        comma.to_tokens(tokens);
+                    },
+                    Pair::End(ty) => {
+                        ty.to_tokens(tokens);
+                    }
+                }
+            }
+            tokens.append(Punct::new(')', Spacing::Alone));
+        }
+
+        if let Some(as_token) = &self.as_token {
+            as_token.to_tokens(tokens);
+            self.alias.as_ref().unwrap().to_tokens(tokens)
+        }
+
+        if let Some(in_token) = &self.in_token {
+            in_token.to_tokens(tokens);
+            self.trait_impl.as_ref().unwrap().to_tokens(tokens)
+        }
     }
 }
 
@@ -119,9 +204,72 @@ impl Parse for OperationSequence {
     }
 }
 
+impl ToTokens for OperationSequence {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        for pair in self.sequence.pairs() {
+            match pair {
+                Pair::Punctuated(operation, comma) => {
+                    operation.to_tokens(tokens);
+                    comma.to_tokens(tokens);
+                },
+                Pair::End(operation) => {
+                    operation.to_tokens(tokens);
+                }
+            }
+        }
+    }
+}
+
 impl Deref for OperationSequence {
     type Target = Punctuated<Operation, Comma>;
     fn deref(&self) -> &Self::Target {
         &self.sequence
+    }
+}
+
+impl DerefMut for OperationSequence {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.sequence
+    }
+}
+
+pub struct IdentSequence {
+    pub sequence: Punctuated<Ident, Comma>,
+}
+
+impl Parse for IdentSequence {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(IdentSequence {
+            sequence: Punctuated::parse_terminated(input)?,
+        })
+    }
+}
+
+impl ToTokens for IdentSequence {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        for pair in self.sequence.pairs() {
+            match pair {
+                Pair::Punctuated(ident, comma) => {
+                    ident.to_tokens(tokens);
+                    comma.to_tokens(tokens);
+                },
+                Pair::End(ident) => {
+                    ident.to_tokens(tokens);
+                }
+            }
+        }
+    }
+}
+
+impl Deref for IdentSequence {
+    type Target = Punctuated<Ident, Comma>;
+    fn deref(&self) -> &Self::Target {
+        &self.sequence
+    }
+}
+
+impl DerefMut for IdentSequence {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.sequence
     }
 }

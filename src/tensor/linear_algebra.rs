@@ -14,35 +14,44 @@ extern crate openblas_src;
 
 use super::allocation_policy::{DynamicAllocationPolicy, StaticAllocationPolicy};
 use super::layout::Layout;
-use super::shape::{Shape1D, Shape2D, TRUE};
+use super::shape::{Shape1D, Shape2D, TRUE, Static, Dynamic};
 use super::tensor::Tensor;
 use super::transpose_policy::{BLASPolicy, Contiguous};
 use cblas::{ddot, dgemm, dgemv, sdot, sgemm, sgemv};
-use melange_macros::expand_operations;
+use melange_macros::{expand_impl, expand_trait};
 use typenum::{Eq, IsEqual, Unsigned};
 
-#[expand_operations(
-    dgemm<T=f64> as dot,
-    sgemm<T=f32> as dot,
+#[expand_trait(
+    Dot, DotDynamic,
 )]
-impl<T, M, K, C, L, P> Tensor<T, Shape2D<M, K>, C, L, P>
+pub trait Operation<Rhs> {
+    type Output;
+
+    fn operation(&self, rhs: &Rhs) -> Self::Output;
+}
+
+#[expand_impl(
+    dgemm<T=f64> as dot in Dot,
+    sgemm<T=f32> as dot in Dot,
+)]
+impl<T, M, K, C, L, P, N, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape2D<K, N>, Static, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, K>, Static, C, L, P>
 where
-    L: for<'a> Layout<'a, T>,
+    M: Unsigned,
+    N: Unsigned,
+    K: Unsigned,
     C: BLASPolicy,
+    L: for<'a> Layout<'a, T>,
+    Lrhs: for<'a> Layout<'a, T>,
+    Crhs: BLASPolicy,
+    P: StaticAllocationPolicy<T, Shape2D<M, N>>,
 {
-    pub fn operation<N, Crhs, Lrhs, Prhs>(
+    type Output = Tensor<T, Shape2D<M, N>, Static, Contiguous, P::Layout, P>;
+
+    fn operation(
         &self,
-        other: &Tensor<T, Shape2D<K, N>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P>
-    where
-        M: Unsigned,
-        N: Unsigned,
-        K: Unsigned,
-        Lrhs: for<'a> Layout<'a, T>,
-        Crhs: BLASPolicy,
-        P: StaticAllocationPolicy<T, Shape2D<M, N>>,
-    {
-        let mut out: Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P> = Tensor::default();
+        other: &Tensor<T, Shape2D<K, N>, Static, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
+        let mut out: Self::Output = Tensor::default();
 
         unsafe {
             placeholder(
@@ -65,20 +74,34 @@ where
 
         out
     }
+}
 
-    pub fn coerce<Krhs, N, Crhs, Lrhs, Prhs>(
+#[expand_impl(
+    dgemm<T=f64, D=Static, Drhs=Dynamic> as dot in Dot,
+    dgemm<T=f64, D=Dynamic, Drhs=Static> as dot in Dot,
+    dgemm<T=f64, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+    sgemm<T=f32, D=Static, Drhs=Dynamic> as dot in Dot,
+    sgemm<T=f32, D=Dynamic, Drhs=Static> as dot in Dot,
+    sgemm<T=f32, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+)]
+impl<T, M, K, D, C, L, P, Krhs, N, Drhs, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape2D<Krhs, N>, Drhs, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, K>, D, C, L, P>
+where
+    M: Unsigned,
+    N: Unsigned,
+    K: IsEqual<Krhs>,
+    Eq<K, Krhs>: TRUE,
+    C: BLASPolicy,
+    L: for<'a> Layout<'a, T>,
+    Lrhs: for<'a> Layout<'a, T>,
+    Crhs: BLASPolicy,
+    P: StaticAllocationPolicy<T, Shape2D<M, N>>,
+{
+    type Output = Tensor<T, Shape2D<M, N>, Static, Contiguous, P::Layout, P>;
+
+    fn operation(
         &self,
-        other: &Tensor<T, Shape2D<Krhs, N>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P>
-    where
-        M: Unsigned,
-        N: Unsigned,
-        K: IsEqual<Krhs>,
-        Eq<K, Krhs>: TRUE,
-        Lrhs: for<'a> Layout<'a, T>,
-        Crhs: BLASPolicy,
-        P: StaticAllocationPolicy<T, Shape2D<M, N>>,
-    {
+        other: &Tensor<T, Shape2D<Krhs, N>, Drhs, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
         let self_shape = self.shape();
         let other_shape = other.shape();
         assert_eq!(
@@ -86,7 +109,7 @@ where
             "Contracted dimmensions {} and {} must be equal, got shapes {:?} and {:?}.",
             self_shape[1], other_shape[0], self_shape, other_shape,
         );
-        let mut out: Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P> = Tensor::default();
+        let mut out: Self::Output = Tensor::default();
 
         unsafe {
             placeholder(
@@ -108,19 +131,29 @@ where
         }
 
         out
-    }
+    }    
+}
 
-    pub fn dynamic<Krhs, N, Crhs, Lrhs, Prhs>(
+#[expand_impl(
+    dgemm<T=f64> as dot in DotDynamic,
+    sgemm<T=f32> as dot in DotDynamic,
+)]
+impl<T, M, K, D, C, L, P, Krhs, N, Drhs, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape2D<Krhs, N>, D, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, K>, Drhs, C, L, P>
+where
+    K: IsEqual<Krhs>,
+    Eq<K, Krhs>: TRUE,
+    C: BLASPolicy,
+    L: for<'a> Layout<'a, T>,
+    Lrhs: for<'a> Layout<'a, T>,
+    Crhs: BLASPolicy,
+    P: DynamicAllocationPolicy<T>,
+{
+    type Output = Tensor<T, Shape2D<M, N>, Dynamic, Contiguous, P::Layout, P>;
+
+    fn operation_dynamic(
         &self,
-        other: &Tensor<T, Shape2D<Krhs, N>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P>
-    where
-        K: IsEqual<Krhs>,
-        Eq<K, Krhs>: TRUE,
-        Lrhs: for<'a> Layout<'a, T>,
-        Crhs: BLASPolicy,
-        P: DynamicAllocationPolicy<T>,
-    {
+        other: &Tensor<T, Shape2D<Krhs, N>, D, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
         let self_shape = self.shape();
         let other_shape = other.shape();
         assert_eq!(
@@ -129,7 +162,7 @@ where
             self_shape[1], other_shape[0], self_shape, other_shape,
         );
 
-        let mut out: Tensor<T, Shape2D<M, N>, Contiguous, P::Layout, P> =
+        let mut out: Self::Output =
             Tensor::alloc(vec![self_shape[0], other_shape[1]]);
 
         unsafe {
@@ -155,26 +188,26 @@ where
     }
 }
 
-#[expand_operations(
-    dgemv<T=f64> as dotv,
-    sgemv<T=f32> as dotv,
+#[expand_impl(
+    dgemv<T=f64> as dot in Dot,
+    sgemv<T=f32> as dot in Dot,
 )]
-impl<T, M, N, C, L, P> Tensor<T, Shape2D<M, N>, C, L, P>
+impl<T, M, N, C, L, P, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape1D<N>, Static, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, N>, Static, C, L, P>
 where
+    M: Unsigned,
+    N: Unsigned,    
     L: for<'a> Layout<'a, T>,
     C: BLASPolicy,
+    Lrhs: for<'a> Layout<'a, T>,
+    P: StaticAllocationPolicy<T, Shape1D<M>>,
 {
-    pub fn operation<Crhs, Lrhs, Prhs>(
+    type Output = Tensor<T, Shape1D<M>, Static, Contiguous, P::Layout, P>;
+
+    fn operation(
         &self,
-        other: &Tensor<T, Shape1D<N>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape1D<M>, Contiguous, P::Layout, P>
-    where
-        M: Unsigned,
-        N: Unsigned,
-        Lrhs: for<'a> Layout<'a, T>,
-        P: StaticAllocationPolicy<T, Shape1D<M>>,
-    {
-        let mut out: Tensor<T, Shape1D<M>, Contiguous, P::Layout, P> = Tensor::default();
+        other: &Tensor<T, Shape1D<N>, Static, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
+        let mut out: Self::Output = Tensor::default();
 
         unsafe {
             placeholder(
@@ -195,18 +228,32 @@ where
 
         out
     }
+}
 
-    pub fn coerce<Nrhs, Crhs, Lrhs, Prhs>(
+#[expand_impl(
+    dgemv<T=f64, D=Static, Drhs=Dynamic> as dot in Dot,
+    dgemv<T=f64, D=Dynamic, Drhs=Static> as dot in Dot,
+    dgemv<T=f64, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+    sgemv<T=f32, D=Static, Drhs=Dynamic> as dot in Dot,
+    sgemv<T=f32, D=Dynamic, Drhs=Static> as dot in Dot,
+    sgemv<T=f32, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+)]
+impl<T, M, N, D, C, L, P, Nrhs, Drhs, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, N>, D, C, L, P>
+where
+    M: Unsigned,
+    N: IsEqual<Nrhs>,
+    Eq<N, Nrhs>: TRUE,    
+    L: for<'a> Layout<'a, T>,
+    C: BLASPolicy,
+    Lrhs: for<'a> Layout<'a, T>,
+    P: StaticAllocationPolicy<T, Shape1D<M>>,
+{
+    type Output = Tensor<T, Shape1D<M>, Static, Contiguous, P::Layout, P>;
+
+    fn operation(
         &self,
-        other: &Tensor<T, Shape1D<Nrhs>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape1D<M>, Contiguous, P::Layout, P>
-    where
-        M: Unsigned,
-        N: IsEqual<Nrhs>,
-        Eq<N, Nrhs>: TRUE,
-        Lrhs: for<'a> Layout<'a, T>,
-        P: StaticAllocationPolicy<T, Shape1D<M>>,
-    {
+        other: &Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
         let self_shape = self.shape();
         let other_shape = other.shape();
         assert_eq!(
@@ -214,7 +261,7 @@ where
             "Contracted dimmensions {} and {} must be equal, got shapes {:?} and {:?}.",
             self_shape[1], other_shape[0], self_shape, other_shape,
         );
-        let mut out: Tensor<T, Shape1D<M>, Contiguous, P::Layout, P> = Tensor::default();
+        let mut out: Self::Output = Tensor::default();
 
         unsafe {
             placeholder(
@@ -235,17 +282,27 @@ where
 
         out
     }
+}
 
-    pub fn dynamic<Nrhs, Crhs, Lrhs, Prhs>(
+#[expand_impl(
+    dgemv<T=f64> as dot in DotDynamic,
+    sgemv<T=f32> as dot in DotDynamic,
+)]
+impl<T, M, N, D, C, L, P, Nrhs, Drhs, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>> for Tensor<T, Shape2D<M, N>, D, C, L, P>
+where
+    N: IsEqual<Nrhs>,
+    Eq<N, Nrhs>: TRUE,    
+    L: for<'a> Layout<'a, T>,
+    C: BLASPolicy,
+    Lrhs: for<'a> Layout<'a, T>,
+    P: DynamicAllocationPolicy<T>,
+{
+    type Output = Tensor<T, Shape1D<M>, Dynamic, Contiguous, P::Layout, P>;
+
+    fn operation_dynamic(
         &self,
-        other: &Tensor<T, Shape1D<Nrhs>, Crhs, Lrhs, Prhs>,
-    ) -> Tensor<T, Shape1D<M>, Contiguous, P::Layout, P>
-    where
-        N: IsEqual<Nrhs>,
-        Eq<N, Nrhs>: TRUE,
-        Lrhs: for<'a> Layout<'a, T>,
-        P: DynamicAllocationPolicy<T>,
-    {
+        other: &Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>,
+    ) -> Self::Output {
         let self_shape = self.shape();
         let other_shape = other.shape();
         assert_eq!(
@@ -254,7 +311,7 @@ where
             self_shape[1], other_shape[0], self_shape, other_shape,
         );
 
-        let mut out: Tensor<T, Shape1D<M>, Contiguous, P::Layout, P> =
+        let mut out: Self::Output =
             Tensor::alloc(vec![self_shape[0]]);
 
         unsafe {
@@ -278,32 +335,43 @@ where
     }
 }
 
-#[expand_operations(
-    ddot<T=f64> as dot,
-    sdot<T=f32> as dot,
+#[expand_impl(
+    ddot<T=f64> as dot in Dot,
+    sdot<T=f32> as dot in Dot,
 )]
-impl<T, N, C, L, P> Tensor<T, Shape1D<N>, C, L, P>
+impl<T, N, C, L, P, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape1D<N>, Static, Crhs, Lrhs, Prhs>> for Tensor<T, Shape1D<N>, Static, C, L, P>
 where
+    N: Unsigned,
     L: for<'a> Layout<'a, T>,
     C: BLASPolicy,
+    Lrhs: for<'a> Layout<'a, T>,
 {
-    pub fn operation<Crhs, Lrhs, Prhs>(&self, other: &Tensor<T, Shape1D<N>, Crhs, Lrhs, Prhs>) -> T
-    where
-        N: Unsigned,
-        Lrhs: for<'a> Layout<'a, T>,
-    {
+    type Output = T;
+
+    fn operation(&self, other: &Tensor<T, Shape1D<N>, Static, Crhs, Lrhs, Prhs>) -> T {
         unsafe { placeholder(N::I32, self, 1, other, 1) }
     }
+}
 
-    pub fn dynamic<Nrhs, Crhs, Lrhs, Prhs>(
-        &self,
-        other: &Tensor<T, Shape1D<Nrhs>, Crhs, Lrhs, Prhs>,
-    ) -> T
-    where
-        N: IsEqual<Nrhs>,
-        Eq<N, Nrhs>: TRUE,
-        Lrhs: for<'a> Layout<'a, T>,
-    {
+#[expand_impl(
+    ddot<T=f64, D=Static, Drhs=Dynamic> as dot in Dot,
+    ddot<T=f64, D=Dynamic, Drhs=Static> as dot in Dot,
+    ddot<T=f64, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+    sdot<T=f32, D=Static, Drhs=Dynamic> as dot in Dot,
+    sdot<T=f32, D=Dynamic, Drhs=Static> as dot in Dot,
+    sdot<T=f32, D=Dynamic, Drhs=Dynamic> as dot in Dot,
+)]
+impl<T, N, D, C, L, P, Drhs, Nrhs, Crhs, Lrhs, Prhs> Operation<Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>> for Tensor<T, Shape1D<N>, D, C, L, P>
+where
+    N: IsEqual<Nrhs>,
+    Eq<N, Nrhs>: TRUE,
+    L: for<'a> Layout<'a, T>,
+    C: BLASPolicy,
+    Lrhs: for<'a> Layout<'a, T>,
+{
+    type Output = T;
+    
+    fn operation(&self, other: &Tensor<T, Shape1D<Nrhs>, Drhs, Crhs, Lrhs, Prhs>) -> T {
         let self_shape = self.shape();
         let other_shape = other.shape();
         assert_eq!(

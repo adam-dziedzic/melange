@@ -6,7 +6,7 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::token::Where;
 use syn::visit_mut::VisitMut;
-use syn::{parse_macro_input, ImplItem, ItemImpl, Result, WhereClause};
+use syn::{parse_macro_input, ImplItem, ItemImpl, ItemTrait, TraitItem, Result, WhereClause, Type};
 
 mod operation_syntax;
 use operation_syntax::*;
@@ -18,7 +18,7 @@ mod search_replace;
 use search_replace::*;
 
 #[proc_macro_attribute]
-pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn expand_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse input and impl block.
     let operation_sequence = parse_macro_input!(attr as OperationSequence);
     let item = parse_macro_input!(item as ItemImpl);
@@ -58,42 +58,40 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
             replace: Ident::new(&format!("{}_unchecked_", name), Span::call_site()),
         };
 
-        // Add trait bound if specified by the operation.
-        // Marginalize generic if an equality bound is specified instead.
-        if let Some(bound) = &operation.bound {
-            match bound {
-                OperationBound::Type(trait_bound) => {
-                    impl_block.generics.where_clause =
-                        if let Some(mut where_clause) = impl_block.generics.where_clause {
-                            where_clause.predicates.push(trait_bound.clone());
-                            Some(where_clause)
-                        } else {
-                            let mut predicates = Punctuated::new();
-                            predicates.push(trait_bound.clone());
+        // For all bounds:
+        // - Add trait bound if specified by the operation.
+        // - Marginalize generic if an equality bound is specified instead.
+        if let Some(bounds) = &operation.bounds {
+            for bound in bounds.iter() {
+                match bound {
+                    OperationBound::Type(trait_bound) => {
+                        impl_block.generics.where_clause =
+                            if let Some(mut where_clause) = impl_block.generics.where_clause {
+                                where_clause.predicates.push(trait_bound.clone());
+                                Some(where_clause)
+                            } else {
+                                let mut predicates = Punctuated::new();
+                                predicates.push(trait_bound.clone());
+    
+                                Some(WhereClause {
+                                    where_token: Where::default(),
+                                    predicates,
+                                })
+                            }
+                    }
+                    OperationBound::Eq(margin) => {
+                        let mut generics_visitor = RemoveGenerics {
+                            find: margin.lhs_ty.clone(),
+                        };
+                        let mut type_visitor = FindReplaceType {
+                            find: margin.lhs_ty.clone(),
+                            replace: margin.rhs_ty.clone(),
+                        };
+                        generics_visitor.visit_item_impl_mut(&mut impl_block);
+                        type_visitor.visit_item_impl_mut(&mut impl_block);
 
-                            Some(WhereClause {
-                                where_token: Where::default(),
-                                predicates,
-                            })
-                        }
-                }
-                OperationBound::Eq(margin) => {
-                    let mut generics_visitor = RemoveGenerics {
-                        find: margin.lhs_ty.clone(),
-                    };
-                    let mut type_visitor = FindReplaceType {
-                        find: margin.lhs_ty.clone(),
-                        replace: margin.rhs_ty.clone(),
-                    };
-                    generics_visitor.visit_item_impl_mut(&mut impl_block);
-                    type_visitor.visit_item_impl_mut(&mut impl_block);
-
-                    for attribute in impl_block.attrs.iter_mut() {
-                        let parsed_attribute: Result<ClosureDefinition> = attribute.parse_args();
-                        match parsed_attribute {
-                            Ok(def) => {
-                                let fn_name = def.fn_name;
-                                let mut closure = def.closure;
+                        if let Type::Path(path) = &margin.rhs_ty {
+                            if let Some(_) = path.path.get_ident() {
                                 let rhs_ty = &margin.rhs_ty;
                                 let mut visitor = FindReplaceIdent {
                                     find: margin.lhs_ty.clone(),
@@ -102,11 +100,51 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
                                         Span::call_site(),
                                     ),
                                 };
-                                visitor.visit_expr_closure_mut(&mut closure);
 
-                                attribute.tokens = quote! { (#fn_name:#closure) };
+                                for attribute in impl_block.attrs.iter_mut() {
+                                    let parsed_attribute: Result<ClosureDefinition> = attribute.parse_args();
+                                    match parsed_attribute {
+                                        Ok(mut def) => {
+                                            // let fn_name = def.fn_name;
+                                            // let mut closure = def.closure;
+                                            // let rhs_ty = &margin.rhs_ty;
+                                            // let mut visitor = FindReplaceIdent {
+                                            //     find: margin.lhs_ty.clone(),
+                                            //     replace: Ident::new(
+                                            //         &format!("{}", quote! { #rhs_ty }),
+                                            //         Span::call_site(),
+                                            //     ),
+                                            // };
+                                            visitor.visit_expr_closure_mut(&mut def.closure);
+            
+                                            attribute.tokens = quote! { (#def) };
+                                        },
+                                        Err(_) => {
+                                            let parsed_attribute: Result<OperationSequence> = attribute.parse_args();
+                                            match parsed_attribute {
+                                                Ok(mut seq) => {
+                                                    for operation in seq.iter_mut() {
+                                                        if let Some(bounds) = &mut operation.bounds {
+                                                            for bound in bounds.iter_mut() {
+                                                                match bound {
+                                                                    OperationBound::Type(trait_bound) => {
+                                                                        visitor.visit_where_predicate_mut(trait_bound);
+                                                                    }
+                                                                    OperationBound::Eq(margin) => {
+                                                                        visitor.visit_type_mut(&mut margin.rhs_ty);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    attribute.tokens = quote! { (#seq) };
+                                                },
+                                                Err(_) => {},
+                                            }
+                                        },
+                                    }
+                                }
                             }
-                            Err(_) => {}
                         }
                     }
                 }
@@ -130,11 +168,9 @@ pub fn expand_operations(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // Prepend the operation name to the method's name.
                 // If the method's name constains operation, replace it with the operation name.
                 let mut method_name = format!("{}", method.sig.ident);
-                method.sig.ident = if let Some(position) = method_name.find("operation") {
+                if let Some(position) = method_name.find("operation") {
                     method_name.replace_range(position..position + 9, &format!("{}", name));
-                    Ident::new(&method_name, Span::call_site())
-                } else {
-                    Ident::new(&format!("{}_{}", name, method_name), Span::call_site())
+                    method.sig.ident = Ident::new(&method_name, Span::call_site())
                 };
 
                 placeholder_method_visitor.visit_block_mut(&mut method.block);
@@ -172,6 +208,46 @@ pub fn define_closure(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let result = quote! {
         #item
+    };
+    result.into()
+}
+
+#[proc_macro_attribute]
+pub fn expand_trait(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = parse_macro_input!(attr as IdentSequence);
+    let item = parse_macro_input!(item as ItemTrait);
+
+    let mut trait_blocks = Vec::new();
+
+    for ident in attr.iter() {
+        let mut trait_block = item.clone();
+        trait_block.ident = ident.clone();
+
+        let trait_name = format!("{}", ident);
+        let mut method_name = String::new();
+        for c in trait_name.chars() {
+            if c.is_ascii_uppercase() {
+                method_name.push('_');
+                method_name.push(c.to_ascii_lowercase());
+            } else {
+                method_name.push(c);
+            }
+        }
+        let method_name = &method_name[1..];
+
+        for trait_item in trait_block.items.iter_mut() {
+            if let TraitItem::Method(method) = trait_item {
+                if &format!("{}", method.sig.ident) == "operation" {
+                    method.sig.ident = Ident::new(method_name, Span::call_site());
+                }
+            }
+        }
+
+        trait_blocks.push(trait_block);
+    }
+
+    let result = quote! {
+        #(#trait_blocks)*
     };
     result.into()
 }

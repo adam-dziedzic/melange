@@ -1,1 +1,1 @@
-pub use super::variable::Variable;
+pub use super::variable::{Variable, New};

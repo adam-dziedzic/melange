@@ -1,12 +1,16 @@
 use super::layout::{Alloc, DynamicFill, Layout, StaticFill};
 use super::shape::{
-    intrinsic_strides_in_place, Broadcast, Same, SameNumElements, Shape, StaticShape, StridedShape,
-    StridedShapeDyn, Transpose, TRUE,
+    intrinsic_strides_in_place, Broadcast, Same, SameNumElements, StaticShape, StridedShape,
+    StridedShapeDyn, Transpose, TRUE, Static, Dynamic, Reduction,
 };
-use super::slice_layout::SliceLayout;
 use super::transpose_policy::{Contiguous, Strided, TransposePolicy};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::convert::TryFrom;
+use super::heap_layout::HeapLayout;
+use std::io::{Error, ErrorKind};
+use super::static_heap_layout::StaticHeapLayout;
+use typenum::U0;
 
 /// The central struct of the `tensor` module.
 ///
@@ -15,6 +19,7 @@ use std::ops::{Deref, DerefMut};
 /// It is parametrized by the following generics:
 /// * T the data scalar type,
 /// * S the type-level shape for compile time checks,
+/// * D a type level bit, true if the tensor is dynamically shaped,
 /// * C the transpose policy
 /// * L the layout
 /// * P the allocation policy
@@ -45,12 +50,12 @@ use std::ops::{Deref, DerefMut};
 ///
 /// For ease of use, aliases for common cases are defined in the `prelude` of the `tensor` module.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Tensor<T, S, C, L, P> {
+pub struct Tensor<T, S, D, C, L, P> {
     layout: L,
-    _phantoms: PhantomData<(T, S, C, P)>,
+    _phantoms: PhantomData<(T, S, D, C, P)>,
 }
 
-impl<T, S, C, L, P> Default for Tensor<T, S, C, L, P>
+impl<T, S, D, C, L, P> Default for Tensor<T, S, D, C, L, P>
 where
     L: Default,
 {
@@ -62,61 +67,70 @@ where
     }
 }
 
-impl<'a, T, S, C, P> Tensor<T, S, C, SliceLayout<'a, T>, P> {
-    pub fn from_slice(slice: &'a [T]) -> Self
-    where
-        S: StaticShape,
-    {
-        assert_eq!(
-            S::NUM_ELEMENTS,
-            slice.len(),
-            "`slice` must have exactly {} elements to be be compatible with specified type-level shape. Got {}.",
-            S::NUM_ELEMENTS,
-            slice.len(),
-        );
-        Tensor {
-            layout: SliceLayout::from_slice_unchecked(
-                slice,
-                S::to_vec(),
-                S::strides(),
-                S::NUM_ELEMENTS,
-                S::NUM_ELEMENTS,
-            ),
+impl<T, S, P> TryFrom<Vec<T>> for Tensor<T, S, Static, Contiguous, StaticHeapLayout<T, S>, P>
+where
+    S: StaticShape,
+{
+    type Error = std::io::Error;
+    
+    fn try_from(v: Vec<T>) -> Result<Self, Self::Error> {
+        if S::NUM_ELEMENTS != v.len() {
+            return Err(Error::new(ErrorKind::InvalidData, format!("Given vector is not compatible with type-level shape: got {} elements instead of {}", v.len(), S::NUM_ELEMENTS)))
+        }
+        
+        Ok(Tensor {
+            layout: StaticHeapLayout {
+                data: v,
+                _phantoms: PhantomData,
+            },
             _phantoms: PhantomData,
-        }
-    }
-
-    pub fn from_slice_dyn(slice: &'a [T], shape: Vec<usize>) -> Self
-    where
-        S: Shape,
-    {
-        assert!(
-            S::runtime_compat(&shape),
-            "`shape` is not compatible with specified type-level shape."
-        );
-        let mut num_elements = 1;
-        let mut strides = Vec::with_capacity(shape.len());
-
-        for dim in shape.iter() {
-            strides.push(num_elements);
-            num_elements *= dim;
-        }
-
-        Tensor {
-            layout: SliceLayout::from_slice_unchecked(
-                slice,
-                shape,
-                strides,
-                num_elements,
-                num_elements,
-            ),
-            _phantoms: PhantomData,
-        }
+        })
     }
 }
 
-impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
-    pub fn broadcast<Z>(&self) -> Tensor<T, Z, Strided, <L as Layout<'_, T>>::View, P>
+impl<T, S, P> TryFrom<Vec<T>> for Tensor<T, S, Dynamic, Contiguous, HeapLayout<T>, P>
+where
+    S: Reduction<U0>,
+    <S as Reduction<U0>>::Output: StaticShape,
+{
+    type Error = std::io::Error;
+    
+    fn try_from(v: Vec<T>) -> Result<Self, Self::Error> {
+        if v.len() % <S as Reduction<U0>>::Output::NUM_ELEMENTS != 0 {
+            return Err(Error::new(ErrorKind::InvalidData, format!("Given vector is not compatible with type-level shape: got {} elements instead of a multiple of {}", v.len(), <S as Reduction<U0>>::Output::NUM_ELEMENTS)))
+        }
+
+        let mut shape = <S as Reduction<U0>>::Output::to_vec();
+        shape[0] = v.len() / <S as Reduction<U0>>::Output::NUM_ELEMENTS;
+        let strides = <S as Reduction<U0>>::Output::strides();
+
+        Ok(Tensor {
+            layout: HeapLayout {
+                data: v,
+                shape,
+                strides,
+            },
+            _phantoms: PhantomData,
+        })
+    }
+}
+
+// impl<T, P> From<Vec<T>> for Tensor<T, Shape1D<Dyn>, Dynamic, Contiguous, HeapLayout<T>, P> {
+//     fn from(data: Vec<T>) -> Self {
+//         let len = data.len();
+//         Tensor {
+//             layout: HeapLayout {
+//                 data,
+//                 shape: vec![len],
+//                 strides: vec![1],
+//             },
+//             _phantoms: PhantomData,
+//         }
+//     }
+// }
+
+impl<T, S, C, L, P> Tensor<T, S, Static, C, L, P> {
+    pub fn broadcast<Z>(&self) -> Tensor<T, Z, Static, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape + Broadcast<Z>,
         Z: StaticShape,
@@ -158,10 +172,53 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn broadcast_dynamic<Z>(
+    pub fn stride<Z>(
+        &self,
+    ) -> Tensor<T, <S as StridedShape<Z>>::Output, Static, Strided, <L as Layout<'_, T>>::View, P>
+    where
+        S: StaticShape + StridedShape<Z>,
+        Z: StaticShape,
+        L: for<'a> Layout<'a, T>,
+    {
+        let mut strides = self.strides();
+        strides
+            .iter_mut()
+            .zip(Z::to_vec())
+            .for_each(|(x, y)| *x *= y);
+
+        let opt_chunk_size = strides
+            .iter()
+            .zip(S::to_vec())
+            .take_while(|(x, _)| **x == 1)
+            .map(|(_, y)| y)
+            .product();
+        Tensor {
+            layout: self.as_view_unchecked(
+                <S as StridedShape<Z>>::Output::to_vec(),
+                strides,
+                <S as StridedShape<Z>>::Output::NUM_ELEMENTS,
+                opt_chunk_size,
+            ),
+            _phantoms: PhantomData,
+        }
+    }
+
+    pub fn fill(value: T) -> Self
+    where
+        L: StaticFill<T>,
+    {
+        Tensor {
+            layout: L::fill(value),
+            _phantoms: PhantomData,
+        }
+    }
+}
+
+impl<T, S, C, L, P> Tensor<T, S, Dynamic, C, L, P> {
+    pub fn broadcast<Z>(
         &self,
         shape: Vec<usize>,
-    ) -> Tensor<T, Z, Strided, <L as Layout<'_, T>>::View, P>
+    ) -> Tensor<T, Z, Dynamic, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: Broadcast<Z>,
         <S as Broadcast<Z>>::Output: TRUE,
@@ -216,39 +273,8 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
 
     pub fn stride<Z>(
         &self,
-    ) -> Tensor<T, <S as StridedShape<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
-    where
-        S: StaticShape + StridedShape<Z>,
-        Z: StaticShape,
-        L: for<'a> Layout<'a, T>,
-    {
-        let mut strides = self.strides();
-        strides
-            .iter_mut()
-            .zip(Z::to_vec())
-            .for_each(|(x, y)| *x *= y);
-
-        let opt_chunk_size = strides
-            .iter()
-            .zip(S::to_vec())
-            .take_while(|(x, _)| **x == 1)
-            .map(|(_, y)| y)
-            .product();
-        Tensor {
-            layout: self.as_view_unchecked(
-                <S as StridedShape<Z>>::Output::to_vec(),
-                strides,
-                <S as StridedShape<Z>>::Output::NUM_ELEMENTS,
-                opt_chunk_size,
-            ),
-            _phantoms: PhantomData,
-        }
-    }
-
-    pub fn stride_dynamic<Z>(
-        &self,
         strides: Vec<usize>,
-    ) -> Tensor<T, <S as StridedShapeDyn<Z>>::Output, Strided, <L as Layout<'_, T>>::View, P>
+    ) -> Tensor<T, <S as StridedShapeDyn<Z>>::Output, Dynamic, Strided, <L as Layout<'_, T>>::View, P>
     where
         S: StridedShapeDyn<Z>,
         L: for<'a> Layout<'a, T>,
@@ -279,26 +305,7 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn transpose(
-        &self,
-    ) -> Tensor<T, <S as Transpose>::Output, C::Transposed, <L as Layout<'_, T>>::View, P>
-    where
-        S: Transpose,
-        C: TransposePolicy,
-        L: for<'a> Layout<'a, T>,
-    {
-        Tensor {
-            layout: self.as_view_unchecked(
-                self.shape().into_iter().rev().collect(),
-                self.strides().into_iter().rev().collect(),
-                self.num_elements(),
-                1,
-            ),
-            _phantoms: PhantomData,
-        }
-    }
-
-    pub fn as_static<Z>(&self) -> Tensor<T, Z, C, <L as Layout<'_, T>>::View, P>
+    pub fn as_static<Z>(&self) -> Tensor<T, Z, Static, C, <L as Layout<'_, T>>::View, P>
     where
         Z: StaticShape,
         S: Same<Z>,
@@ -316,7 +323,38 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
         }
     }
 
-    pub fn as_view(&self) -> Tensor<T, S, C, <L as Layout<'_, T>>::View, P>
+    pub fn fill(value: T, shape: Vec<usize>) -> Self
+    where
+        L: DynamicFill<T>,
+    {
+        Tensor {
+            layout: L::fill(value, shape),
+            _phantoms: PhantomData,
+        }
+    }
+}
+
+impl<T, S, D, C, L, P> Tensor<T, S, D, C, L, P> {
+    pub fn transpose(
+        &self,
+    ) -> Tensor<T, <S as Transpose>::Output, D, C::Transposed, <L as Layout<'_, T>>::View, P>
+    where
+        S: Transpose,
+        C: TransposePolicy,
+        L: for<'a> Layout<'a, T>,
+    {
+        Tensor {
+            layout: self.as_view_unchecked(
+                self.shape().into_iter().rev().collect(),
+                self.strides().into_iter().rev().collect(),
+                self.num_elements(),
+                1,
+            ),
+            _phantoms: PhantomData,
+        }
+    }
+
+    pub fn as_view(&self) -> Tensor<T, S, D, C, <L as Layout<'_, T>>::View, P>
     where
         S: StaticShape,
         L: for<'a> Layout<'a, T>,
@@ -341,30 +379,10 @@ impl<T, S, C, L, P> Tensor<T, S, C, L, P> {
             _phantoms: PhantomData,
         }
     }
-
-    pub fn fill(value: T) -> Self
-    where
-        L: StaticFill<T>,
-    {
-        Tensor {
-            layout: L::fill(value),
-            _phantoms: PhantomData,
-        }
-    }
-
-    pub fn fill_dynamic(value: T, shape: Vec<usize>) -> Self
-    where
-        L: DynamicFill<T>,
-    {
-        Tensor {
-            layout: L::fill(value, shape),
-            _phantoms: PhantomData,
-        }
-    }
 }
 
-impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
-    pub fn reshape<Z>(&self) -> Tensor<T, Z, Contiguous, <L as Layout<'_, T>>::View, P>
+impl<T, S, L, P> Tensor<T, S, Static, Contiguous, L, P> {
+    pub fn reshape<Z>(&self) -> Tensor<T, Z, Static, Contiguous, <L as Layout<'_, T>>::View, P>
     where
         Z: StaticShape,
         S: SameNumElements<T, Z>,
@@ -381,11 +399,13 @@ impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
             _phantoms: PhantomData,
         }
     }
+}
 
-    pub fn reshape_dynamic<Z>(
+impl<T, S, L, P> Tensor<T, S, Dynamic, Contiguous, L, P> {
+    pub fn reshape<Z>(
         &self,
         shape: Vec<usize>,
-    ) -> Tensor<T, Z, Contiguous, <L as Layout<'_, T>>::View, P>
+    ) -> Tensor<T, Z, Dynamic, Contiguous, <L as Layout<'_, T>>::View, P>
     where
         L: for<'a> Layout<'a, T>,
     {
@@ -407,7 +427,7 @@ impl<T, S, L, P> Tensor<T, S, Contiguous, L, P> {
     }
 }
 
-impl<T, S, C, L, P> Deref for Tensor<T, S, C, L, P> {
+impl<T, S, D, C, L, P> Deref for Tensor<T, S, D, C, L, P> {
     type Target = L;
 
     fn deref(&self) -> &Self::Target {
@@ -415,7 +435,7 @@ impl<T, S, C, L, P> Deref for Tensor<T, S, C, L, P> {
     }
 }
 
-impl<T, S, C, L, P> DerefMut for Tensor<T, S, C, L, P> {
+impl<T, S, D, C, L, P> DerefMut for Tensor<T, S, D, C, L, P> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.layout
     }

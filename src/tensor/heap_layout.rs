@@ -11,9 +11,9 @@ use std::ops::{Deref, DerefMut};
 /// be prefered unless you have specific needs.
 #[derive(Debug, PartialEq, Clone)]
 pub struct HeapLayout<T> {
-    data: Vec<T>,
-    shape: Vec<usize>,
-    strides: Vec<usize>,
+    pub(super) data: Vec<T>,
+    pub(super) shape: Vec<usize>,
+    pub(super) strides: Vec<usize>,
 }
 
 impl<T> Alloc for HeapLayout<T>
@@ -86,7 +86,13 @@ where
         num_elements: usize,
         opt_chunk_size: usize,
     ) -> Self::View {
-        SliceLayout::from_slice_unchecked(&self.data, shape, strides, num_elements, opt_chunk_size)
+        SliceLayout {
+            data: &self.data,
+            shape,
+            strides,
+            num_elements,
+            opt_chunk_size,
+        }
     }
 }
 
